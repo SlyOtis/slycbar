@@ -1,0 +1,292 @@
+.mar-menu,
+.mar-dropdown-panel,
+.mar-date-dropdown-panel,
+.mar-time-dropdown-panel {
+  --mar-panel-surface: var(--mar-surface-0);
+  --mar-panel-surface-subtle: var(--mar-surface-50);
+  --mar-panel-surface-hover: var(--mar-surface-100);
+  --mar-panel-line: var(--mar-surface-200);
+  --mar-panel-line-strong: var(--mar-surface-300);
+  --mar-panel-text: var(--mar-text-color);
+  --mar-panel-text-muted: var(--mar-text-muted-color);
+  --mar-panel-text-faint: var(--mar-surface-400);
+  --mar-panel-text-disabled: var(--mar-surface-300);
+  --mar-panel-primary: var(--mar-primary-color);
+  --mar-panel-primary-contrast: var(--mar-primary-contrast-color);
+  --mar-panel-primary-hover: var(--mar-primary-hover-color);
+  --mar-panel-primary-soft: var(--mar-primary-100);
+  --mar-panel-primary-softer: var(--mar-primary-50);
+  --mar-panel-primary-on-soft: var(--mar-primary-700);
+  --mar-panel-primary-band: var(--mar-primary-200);
+  --mar-panel-row: 2.6667em;
+  --mar-panel-rows: 8;
+  font-family: inherit;
+}
+
+html.dark .mar-menu:not([data-theme="light"]),
+html.dark .mar-dropdown-panel:not([data-theme="light"]),
+html.dark .mar-date-dropdown-panel:not([data-theme="light"]),
+html.dark .mar-time-dropdown-panel:not([data-theme="light"]),
+[data-theme="dark"] .mar-menu:not([data-theme="light"]),
+[data-theme="dark"] .mar-dropdown-panel:not([data-theme="light"]),
+[data-theme="dark"] .mar-date-dropdown-panel:not([data-theme="light"]),
+[data-theme="dark"] .mar-time-dropdown-panel:not([data-theme="light"]),
+.mar-menu[data-theme="dark"],
+.mar-dropdown-panel[data-theme="dark"],
+.mar-date-dropdown-panel[data-theme="dark"],
+.mar-time-dropdown-panel[data-theme="dark"] {
+  --mar-panel-surface: var(--mar-surface-50);
+  --mar-panel-surface-subtle: var(--mar-surface-100);
+  --mar-panel-surface-hover: var(--mar-surface-200);
+  --mar-panel-line: var(--mar-surface-200);
+  --mar-panel-line-strong: var(--mar-surface-300);
+  --mar-panel-text: var(--mar-surface-900);
+  --mar-panel-text-muted: var(--mar-surface-600);
+  --mar-panel-text-faint: var(--mar-surface-400);
+  --mar-panel-text-disabled: var(--mar-surface-300);
+  --mar-panel-primary: var(--mar-primary-400);
+  --mar-panel-primary-contrast: var(--mar-surface-50);
+  --mar-panel-primary-hover: var(--mar-primary-300);
+  --mar-panel-primary-soft: var(--mar-primary-900);
+  --mar-panel-primary-softer: var(--mar-primary-950);
+  --mar-panel-primary-on-soft: var(--mar-primary-200);
+  --mar-panel-primary-band: var(--mar-primary-900);
+}
+
+.mar-menu,
+.mar-dropdown-panel,
+.mar-date-dropdown-panel,
+.mar-time-dropdown-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--mar-panel-surface);
+  color: var(--mar-panel-text);
+  border: 1px solid var(--mar-panel-line-strong);
+  border-radius: 10px;
+  box-shadow:
+    0 20px 48px -16px rgba(0, 0, 0, 0.5),
+    0 8px 20px -8px rgba(0, 0, 0, 0.32),
+    0 2px 6px -2px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+  font-size: 0.8125em;
+}
+
+.mar-time-dropdown-panel {
+  width: 280px;
+  min-width: 280px;
+  max-height: 100%;
+}
+
+.mar-date-dropdown-panel {
+  inline-size: max-content;
+  min-inline-size: 21.5385em;
+  max-inline-size: calc(100vw - 1.25em);
+  max-height: 100%;
+}
+
+.mar-menu {
+  inline-size: max-content;
+  max-inline-size: min(24em, calc(100vw - 1.25em));
+  max-height: 100%;
+  overflow: hidden auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--mar-panel-line-strong) transparent;
+}
+
+.mar-dropdown-panel *,
+.mar-date-dropdown-panel *,
+.mar-time-dropdown-panel *,
+.mar-dropdown-panel *::before,
+.mar-date-dropdown-panel *::before,
+.mar-time-dropdown-panel *::before,
+.mar-dropdown-panel *::after,
+.mar-date-dropdown-panel *::after,
+.mar-time-dropdown-panel *::after {
+  box-sizing: border-box;
+}
+
+.mar-dropdown-panel-head,
+.mar-date-dropdown-head,
+.mar-time-dropdown-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3077em;
+  padding: 0.9231em 1.0462em 0.7385em;
+  background: var(--mar-highlight-background);
+  color: var(--mar-highlight-color);
+  border-bottom: 1px solid var(--mar-panel-line);
+  flex-shrink: 0;
+}
+
+.mar-dropdown-panel-head-mode,
+.mar-date-dropdown-head-mode,
+.mar-time-dropdown-head-mode {
+  font-size: 0.7692em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.75;
+}
+
+.mar-dropdown-panel-head-value,
+.mar-date-dropdown-head-value,
+.mar-time-dropdown-head-value {
+  font-size: 1.2923em;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.mar-dropdown-panel-list,
+.mar-date-dropdown-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--mar-panel-line-strong) transparent;
+}
+
+.mar-dropdown-panel-list::-webkit-scrollbar,
+.mar-date-dropdown-body::-webkit-scrollbar {
+  width: 4px;
+}
+
+.mar-dropdown-panel-list::-webkit-scrollbar-track,
+.mar-date-dropdown-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.mar-dropdown-panel-list::-webkit-scrollbar-thumb,
+.mar-date-dropdown-body::-webkit-scrollbar-thumb {
+  background: var(--mar-panel-line-strong);
+  border-radius: 4px;
+}
+
+.mar-dropdown-panel-actions,
+.mar-date-dropdown-actions,
+.mar-time-dropdown-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.2462em;
+  padding: 0.4923em 0.5538em;
+  border-top: 1px solid var(--mar-panel-line);
+  background: var(--mar-panel-surface-subtle);
+  flex-shrink: 0;
+}
+
+.mar-dropdown-panel-actions-spacer,
+.mar-date-dropdown-actions-spacer,
+.mar-time-dropdown-actions-spacer {
+  flex: 1 1 auto;
+}
+
+.mar-panel-text-btn {
+  font: inherit;
+  font-size: 0.9231em;
+  font-weight: 600;
+  padding: 0.4667em 0.7333em;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mar-panel-text-muted);
+  cursor: pointer;
+  transition: background 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mar-panel-text-btn:hover:not(:disabled) {
+  background: var(--mar-panel-surface-hover);
+  color: var(--mar-panel-text);
+}
+
+.mar-panel-text-btn:focus-visible {
+  outline: 2px solid var(--mar-panel-primary);
+  outline-offset: 1px;
+}
+
+.mar-panel-text-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.mar-panel-confirm-btn {
+  font: inherit;
+  font-size: 0.9231em;
+  font-weight: 600;
+  padding: 0.5333em 1.1333em;
+  border: 1px solid var(--mar-panel-primary);
+  border-radius: 6px;
+  background: var(--mar-panel-primary);
+  color: var(--mar-panel-primary-contrast);
+  cursor: pointer;
+  transition:
+    background 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mar-panel-confirm-btn:hover:not(:disabled) {
+  background: var(--mar-panel-primary-hover);
+  border-color: var(--mar-panel-primary-hover);
+}
+
+.mar-panel-confirm-btn:focus-visible {
+  outline: 2px solid var(--mar-panel-primary);
+  outline-offset: 1px;
+}
+
+.mar-panel-confirm-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mar-date-dropdown-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3077em;
+  padding: 0.4923em 0.5538em;
+  border-top: 1px solid var(--mar-panel-line);
+  flex-shrink: 0;
+}
+
+.mar-dropdown-panel-quick-btn,
+.mar-date-dropdown-preset {
+  font: inherit;
+  font-size: 0.8462em;
+  font-weight: 600;
+  padding: 0.2909em 0.8727em;
+  border: 1px solid var(--mar-panel-line);
+  border-radius: 999px;
+  background: var(--mar-panel-surface);
+  color: var(--mar-panel-text-muted);
+  cursor: pointer;
+  transition:
+    background 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mar-dropdown-panel-quick-btn:hover:not(:disabled),
+.mar-date-dropdown-preset:hover:not(:disabled) {
+  background: var(--mar-panel-surface-hover);
+  border-color: var(--mar-panel-line-strong);
+  color: var(--mar-panel-text);
+}
+
+.mar-dropdown-panel-quick-btn:focus-visible,
+.mar-date-dropdown-preset:focus-visible {
+  outline: 2px solid var(--mar-panel-primary);
+  outline-offset: 1px;
+}
+
+.mar-dropdown-panel-quick-btn.is-active,
+.mar-date-dropdown-preset.is-active {
+  background: var(--mar-selector-bg);
+  border-color: transparent;
+  color: var(--mar-selector-color);
+}
+
+.mar-dropdown-panel-quick-btn:disabled,
+.mar-date-dropdown-preset:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+

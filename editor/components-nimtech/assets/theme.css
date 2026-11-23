@@ -1,0 +1,561 @@
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --mar-primary-50: #fef6f3;
+  --mar-primary-100: #fde9e1;
+  --mar-primary-200: #fad0c0;
+  --mar-primary-300: #f3af94;
+  --mar-primary-400: #e88b63;
+  --mar-primary-500: #d97757;
+  --mar-primary-600: #c4643f;
+  --mar-primary-700: #a44e30;
+  --mar-primary-800: #873f28;
+  --mar-primary-900: #6f3524;
+  --mar-primary-950: #3c1a10;
+
+  --mar-surface-0: #ffffff;
+  --mar-surface-50: #faf9f5;
+  --mar-surface-100: #f4f2ec;
+  --mar-surface-200: #e8e6dc;
+  --mar-surface-300: #d5d2c8;
+  --mar-surface-400: #b0aea5;
+  --mar-surface-500: #8a8578;
+  --mar-surface-600: #6b665a;
+  --mar-surface-700: #524e44;
+  --mar-surface-800: #3d3929;
+  --mar-surface-900: #2a2720;
+  --mar-surface-950: #141413;
+
+  --mar-primary-color: var(--mar-primary-500);
+  --mar-primary-contrast-color: #ffffff;
+  --mar-primary-hover-color: var(--mar-primary-600);
+  --mar-primary-active-color: var(--mar-primary-700);
+
+  --mar-text-color: var(--mar-surface-900);
+  --mar-text-muted-color: var(--mar-surface-500);
+  --mar-content-background: var(--mar-surface-0);
+  --mar-content-border-color: var(--mar-surface-200);
+  --mar-content-hover-background: var(--mar-surface-100);
+  --mar-content-hover-color: var(--mar-surface-900);
+  --mar-sheet-background: var(--mar-surface-0);
+  --mar-highlight-background: var(--mar-primary-50);
+  --mar-highlight-color: var(--mar-primary-700);
+  --mar-highlight-focus-background: var(--mar-primary-100);
+  --mar-selector-bg: color-mix(in oklab, var(--mar-primary-500), transparent 80%);
+  --mar-selector-color: var(--mar-primary-700);
+  --mar-highlight-focus-color: var(--mar-primary-800);
+
+  --mar-red-500: #ef4444;
+  --mar-red-600: #dc2626;
+  --mar-red-700: #b91c1c;
+  --mar-green-500: #22c55e;
+  --mar-green-600: #059669;
+  --mar-green-700: #047857;
+  --mar-blue-500: #3b82f6;
+  --mar-blue-600: #2563eb;
+  --mar-blue-700: #1d4ed8;
+  --mar-amber-500: #f59e0b;
+  --mar-amber-600: #d97706;
+  --mar-amber-700: #b45309;
+  --mar-yellow-500: #eab308;
+  --mar-yellow-600: #ca8a04;
+  --mar-purple-500: #a855f7;
+  --mar-purple-600: #7c3aed;
+  --mar-purple-700: #6d28d9;
+  --mar-teal-500: #14b8a6;
+  --mar-orange-500: #f97316;
+  --mar-orange-600: #ea580c;
+  --mar-orange-700: #c2410c;
+  --mar-red-400: #f87171;
+
+  --mar-red-50: color-mix(in srgb, var(--mar-red-500) 8%, var(--mar-surface-0));
+  --mar-red-100: color-mix(in srgb, var(--mar-red-500) 14%, var(--mar-surface-0));
+  --mar-red-200: color-mix(in srgb, var(--mar-red-500) 24%, var(--mar-surface-0));
+  --mar-green-50: color-mix(in srgb, var(--mar-green-500) 10%, var(--mar-surface-0));
+  --mar-amber-50: color-mix(in srgb, var(--mar-amber-500) 10%, var(--mar-surface-0));
+  --mar-amber-100: color-mix(in srgb, var(--mar-amber-500) 16%, var(--mar-surface-0));
+  --mar-orange-100: color-mix(in srgb, var(--mar-orange-500) 16%, var(--mar-surface-0));
+  --mar-yellow-50: color-mix(in srgb, var(--mar-yellow-500) 12%, var(--mar-surface-0));
+
+  --mar-primary-color-rgb: 217, 119, 87;
+  --mar-highlight-background-hover: var(--mar-primary-100);
+
+  --mar-success-color: var(--mar-green-600);
+  --mar-success-contrast-color: #ffffff;
+  --mar-success-hover-color: var(--mar-green-700);
+  --mar-info-color: var(--mar-blue-600);
+  --mar-info-contrast-color: #ffffff;
+  --mar-info-hover-color: var(--mar-blue-700);
+  --mar-warn-color: var(--mar-amber-600);
+  --mar-warn-contrast-color: #ffffff;
+  --mar-warn-hover-color: var(--mar-amber-700);
+  --mar-danger-color: var(--mar-red-600);
+  --mar-danger-contrast-color: #ffffff;
+  --mar-danger-hover-color: var(--mar-red-700);
+  --mar-help-color: var(--mar-purple-600);
+  --mar-help-contrast-color: #ffffff;
+  --mar-help-hover-color: var(--mar-purple-700);
+
+  --mar-tooltip-bg: var(--mar-surface-100);
+  --mar-tooltip-fg: var(--mar-surface-900);
+  --mar-tooltip-border: var(--mar-surface-300);
+
+  --mar-image-backdrop: #000000;
+  --mar-overlay-color: #ffffff;
+  --mar-overlay-muted-color: rgba(255, 255, 255, 0.78);
+  --mar-overlay-backdrop: rgba(0, 0, 0, 0.42);
+  --mar-overlay-text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --mar-overlay-title-shadow: 0 2px 12px rgba(0, 0, 0, 0.55);
+  --mar-overlay-scrim: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.34) 0%,
+    rgba(0, 0, 0, 0.12) 38%,
+    rgba(0, 0, 0, 0.16) 64%,
+    rgba(0, 0, 0, 0.4) 100%
+  );
+
+  --mar-code-bg: #16161a;
+  --mar-code-fg: #d7dae0;
+  --mar-code-keyword: #e89b7d;
+  --mar-code-literal: #d19a66;
+  --mar-code-string: #98c379;
+  --mar-code-escape: #56b6c2;
+  --mar-code-comment: #7f848e;
+  --mar-code-function: #61afef;
+  --mar-code-name: #e5c07b;
+  --mar-code-tag: #e06c75;
+  --mar-code-default: #abb2bf;
+
+  --mar-paper-background: #ffffff;
+  --mar-paper-color: #1a1a1a;
+  --mar-paper-link: #1a56db;
+  --mar-paper-border: #d6d6d6;
+  --mar-paper-muted: #7a7a7a;
+
+  --mar-font-family: "Inter", system-ui, sans-serif;
+
+  --mar-font-sans: "Inter", system-ui, sans-serif;
+  --mar-font-serif: ui-serif, Georgia, serif;
+  --mar-font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --mar-font-rounded: ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+  --mar-font-inter: "Inter", system-ui, sans-serif;
+  --mar-font-source-serif: "Source Serif 4", ui-serif, Georgia, serif;
+  --mar-font-jetbrains-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --mar-font-nunito: "Nunito", system-ui, sans-serif;
+
+  --mar-content-border-radius: 12px;
+
+  --mar-sidebar-bg: var(--mar-surface-50);
+  --mar-sidebar-border: var(--mar-surface-200);
+  --mar-sidebar-text: var(--mar-surface-800);
+  --mar-sidebar-text-muted: var(--mar-surface-500);
+  --mar-sidebar-hover: var(--mar-surface-100);
+  --mar-sidebar-group-bg: var(--mar-surface-100);
+  --mar-sidebar-active-bg: var(--mar-selector-bg);
+  --mar-sidebar-active-text: var(--mar-selector-color);
+  --mar-sidebar-row-gap: 0.25em;
+
+  --mar-record-card-background: var(--mar-primary-50);
+  --mar-record-card-icon-background: var(--mar-primary-100);
+
+
+  --mar-code-font: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  --mar-section-pt: 1.5em;
+  --mar-toc-scale: 1;
+
+  --mar-block-radius: 6px;
+  --mar-block-pad-x: 0.5715em;
+  --mar-block-pad-y: 0.2143em;
+  --mar-block-hover-bg: var(--mar-content-hover-background);
+  --mar-block-drop-line: var(--mar-primary-color);
+  --mar-block-selected-bg: color-mix(in srgb, var(--mar-primary-color), transparent 82%);
+
+  --mar-font-size: 1rem;
+  --mar-text-4xs: calc(var(--mar-font-size) * 0.5);
+  --mar-text-3xs: calc(var(--mar-font-size) * 0.625);
+  --mar-text-2xs: calc(var(--mar-font-size) * 0.6875);
+  --mar-text-xs: calc(var(--mar-font-size) * 0.75);
+  --mar-text-sm: calc(var(--mar-font-size) * 0.8125);
+  --mar-text-md: calc(var(--mar-font-size) * 0.875);
+  --mar-text-lead: calc(var(--mar-font-size) * 0.9375);
+  --mar-text-base: var(--mar-font-size);
+  --mar-text-lg: calc(var(--mar-font-size) * 1.125);
+  --mar-text-xl: calc(var(--mar-font-size) * 1.25);
+
+  --mar-field-radius: 0.8em;
+  --mar-field-font-size: var(--mar-text-sm);
+  --mar-field-pad-x: 0.75em;
+  --mar-field-pad-y: 0.3em;
+  --mar-field-min-height: calc(var(--mar-text-base) * 1.875);
+  --mar-field-label-width: clamp(6em, 24%, 13em);
+  --mar-field-label-gap: 1em;
+
+  --mar-button-font-size: var(--mar-text-xs);
+
+  --mar-page-header-collapsed-size: 2.75em;
+  --mar-page-header-expanded-size: auto;
+  --mar-hero-header-offset: 0px;
+
+  --mar-collapse-duration: 0.25s;
+  --mar-collapse-ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --glass-surface: color-mix(in oklab, var(--mar-content-background), transparent 28%);
+  --glass-surface-raised: color-mix(in oklab, var(--mar-content-background), transparent 16%);
+  --glass-surface-overlay: color-mix(in oklab, var(--mar-content-background), transparent 8%);
+  --glass-border: color-mix(in oklab, var(--mar-content-border-color), transparent 40%);
+  --glass-border-strong: color-mix(in oklab, var(--mar-surface-900), transparent 86%);
+  --glass-sheen: linear-gradient(135deg, color-mix(in oklab, var(--mar-surface-0), transparent 55%) 0%, transparent 45%, transparent 75%, color-mix(in oklab, var(--mar-surface-0), transparent 80%) 100%);
+  --glass-blur: 0.375em;
+  --glass-blur-strong: 0.75em;
+  --glass-saturate: 1.3;
+  --glass-shadow: 0 0.75em 2em -1em color-mix(in oklab, var(--mar-surface-900), transparent 82%);
+  --mar-page-raised-shadow-color: color-mix(in oklab, var(--mar-surface-900), transparent 86%);
+  --mar-page-header-grain: 0.2;
+
+  --mar-section-gradient-primary: linear-gradient(135deg, color-mix(in oklab, var(--mar-primary-color), transparent 86%), color-mix(in oklab, var(--mar-primary-color), transparent 92%));
+  --mar-section-gradient-teal: linear-gradient(135deg, color-mix(in oklab, var(--mar-teal-500), transparent 86%), color-mix(in oklab, var(--mar-teal-500), transparent 92%));
+  --mar-section-gradient-purple: linear-gradient(135deg, color-mix(in oklab, var(--mar-purple-500), transparent 86%), color-mix(in oklab, var(--mar-purple-500), transparent 92%));
+  --mar-section-gradient-blue: linear-gradient(135deg, color-mix(in oklab, var(--mar-blue-500), transparent 86%), color-mix(in oklab, var(--mar-blue-500), transparent 92%));
+  --mar-section-gradient-amber: linear-gradient(135deg, color-mix(in oklab, var(--mar-amber-500), transparent 86%), color-mix(in oklab, var(--mar-amber-500), transparent 92%));
+  --mar-section-gradient-orange: linear-gradient(135deg, color-mix(in oklab, var(--mar-orange-500), transparent 86%), color-mix(in oklab, var(--mar-orange-500), transparent 92%));
+}
+
+:root[data-theme="dark"],
+:root.dark,
+html.dark {
+  color-scheme: dark;
+
+  --mar-surface-0: #141413;
+  --mar-surface-50: #1c1b19;
+  --mar-surface-100: #262420;
+  --mar-surface-200: #35322b;
+  --mar-surface-300: #474338;
+  --mar-surface-400: #5e5949;
+  --mar-surface-500: #8a8578;
+  --mar-surface-600: #b0aea5;
+  --mar-surface-700: #d5d2c8;
+  --mar-surface-800: #e8e6dc;
+  --mar-surface-900: #f4f2ec;
+  --mar-surface-950: #faf9f5;
+
+  --mar-primary-color: var(--mar-primary-400);
+  --mar-primary-contrast-color: var(--mar-surface-0);
+  --mar-primary-hover-color: var(--mar-primary-300);
+  --mar-primary-active-color: var(--mar-primary-200);
+
+  --mar-text-color: var(--mar-surface-900);
+  --mar-text-muted-color: var(--mar-surface-600);
+  --mar-content-background: var(--mar-surface-50);
+  --mar-content-border-color: var(--mar-surface-200);
+  --mar-content-hover-background: var(--mar-surface-100);
+  --mar-content-hover-color: var(--mar-surface-950);
+  --mar-highlight-background: color-mix(in srgb, var(--mar-primary-400), transparent 84%);
+  --mar-highlight-color: rgba(255, 255, 255, 0.87);
+  --mar-highlight-focus-background: color-mix(in srgb, var(--mar-primary-400), transparent 76%);
+  --mar-selector-bg: color-mix(in oklab, var(--mar-primary-400), transparent 68%);
+  --mar-selector-color: var(--mar-primary-200);
+  --mar-highlight-focus-color: rgba(255, 255, 255, 0.87);
+
+  --mar-success-color: var(--mar-green-500);
+  --mar-success-hover-color: var(--mar-green-600);
+  --mar-info-color: var(--mar-blue-500);
+  --mar-info-hover-color: var(--mar-blue-600);
+  --mar-warn-color: var(--mar-amber-500);
+  --mar-warn-hover-color: var(--mar-amber-600);
+  --mar-danger-color: var(--mar-red-500);
+  --mar-danger-hover-color: var(--mar-red-600);
+  --mar-help-color: var(--mar-purple-500);
+  --mar-help-hover-color: var(--mar-purple-600);
+
+  --mar-red-700: #f87171;
+  --mar-green-700: #4ade80;
+  --mar-amber-700: #fbbf24;
+  --mar-orange-700: #fb923c;
+
+  --mar-primary-color-rgb: 232, 139, 99;
+  --mar-highlight-background-hover: color-mix(in srgb, var(--mar-primary-400), transparent 76%);
+
+  --mar-sidebar-bg: var(--mar-surface-50);
+  --mar-sidebar-border: var(--mar-surface-200);
+  --mar-sidebar-text: var(--mar-surface-900);
+  --mar-sidebar-text-muted: var(--mar-surface-600);
+  --mar-sidebar-hover: var(--mar-surface-100);
+  --mar-sidebar-group-bg: var(--mar-surface-100);
+  --mar-sidebar-active-bg: var(--mar-selector-bg);
+  --mar-sidebar-active-text: var(--mar-selector-color);
+
+  --mar-record-card-background: var(--glass-surface);
+  --mar-record-card-icon-background: color-mix(in srgb, var(--mar-primary-400), transparent 84%);
+
+  --glass-surface: color-mix(in oklab, var(--mar-content-background), transparent 50%);
+  --glass-surface-raised: color-mix(in oklab, var(--mar-surface-100), transparent 20%);
+  --glass-surface-overlay: color-mix(in oklab, var(--mar-surface-100), transparent 8%);
+  --glass-border: var(--mar-content-border-color);
+  --glass-border-strong: color-mix(in oklab, var(--mar-surface-950), transparent 78%);
+  --glass-sheen: linear-gradient(135deg, color-mix(in oklab, var(--mar-surface-950), transparent 88%) 0%, transparent 42%, transparent 70%, color-mix(in oklab, var(--mar-surface-950), transparent 95%) 100%);
+  --glass-shadow: 0 1em 2.5em -1.25em color-mix(in oklab, #000000, transparent 40%);
+  --mar-page-raised-shadow-color: color-mix(in oklab, #000000, transparent 55%);
+  --mar-page-header-grain: 0.12;
+}
+
+@media (pointer: coarse) {
+  :root,
+  :root[data-theme] {
+    --mar-field-font-size: var(--mar-text-base);
+    --mar-field-min-height: calc(var(--mar-text-base) * 2.25);
+  }
+}
+
+.mar-overlay-dark {
+  --mar-overlay-color: #14140f;
+  --mar-overlay-muted-color: rgba(20, 20, 15, 0.78);
+  --mar-overlay-backdrop: rgba(255, 255, 255, 0.52);
+  --mar-overlay-text-shadow: 0 1px 3px rgba(255, 255, 255, 0.55);
+  --mar-overlay-title-shadow: 0 2px 12px rgba(255, 255, 255, 0.7);
+  --mar-overlay-scrim: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.34) 0%,
+    rgba(255, 255, 255, 0.12) 38%,
+    rgba(255, 255, 255, 0.16) 64%,
+    rgba(255, 255, 255, 0.4) 100%
+  );
+}
+
+:root[data-mar-theme="sixteen-bit"],
+:root[data-mar-theme="sixteen-bit"][data-theme="light"] {
+  --mar-primary-50: #eef4ff;
+  --mar-primary-100: #d9e6ff;
+  --mar-primary-200: #adc8ff;
+  --mar-primary-300: #7aa2ff;
+  --mar-primary-400: #4c7bff;
+  --mar-primary-500: #2b4fd6;
+  --mar-primary-600: #1f3cb0;
+  --mar-primary-700: #182e8a;
+  --mar-primary-800: #122263;
+  --mar-primary-900: #0c1742;
+  --mar-primary-950: #060c24;
+
+  --mar-surface-0: #ffffff;
+  --mar-surface-50: #f2f4fb;
+  --mar-surface-100: #e4e8f5;
+  --mar-surface-200: #ccd3e8;
+  --mar-surface-300: #a8b3d1;
+  --mar-surface-400: #7d8ab0;
+  --mar-surface-500: #5b688d;
+  --mar-surface-600: #454f6d;
+  --mar-surface-700: #333b52;
+  --mar-surface-800: #232939;
+  --mar-surface-900: #171b26;
+  --mar-surface-950: #0b0d13;
+}
+
+:root[data-mar-theme="sixteen-bit"][data-theme="dark"],
+:root[data-mar-theme="sixteen-bit"].dark,
+html[data-mar-theme="sixteen-bit"].dark {
+  --mar-surface-0: #0b0d13;
+  --mar-surface-50: #12151f;
+  --mar-surface-100: #1a1f2e;
+  --mar-surface-200: #262d42;
+  --mar-surface-300: #343d59;
+  --mar-surface-400: #465172;
+  --mar-surface-500: #5b688d;
+  --mar-surface-600: #8d97b8;
+  --mar-surface-700: #b6bed6;
+  --mar-surface-800: #d3d9e8;
+  --mar-surface-900: #e8ecf5;
+  --mar-surface-950: #f5f7fc;
+}
+
+:root[data-mar-theme="nimtech"],
+:root[data-mar-theme="nimtech"][data-theme="light"] {
+  --mar-primary-50: #fff6f5;
+  --mar-primary-100: #ffeeea;
+  --mar-primary-200: #ffddd5;
+  --mar-primary-300: #fec4b7;
+  --mar-primary-400: #fea996;
+  --mar-primary-500: #fe947c;
+  --mar-primary-600: #c37466;
+  --mar-primary-700: #89544f;
+  --mar-primary-800: #6c4444;
+  --mar-primary-900: #4b3238;
+  --mar-primary-950: #34252f;
+
+  --mar-surface-0: #ffffff;
+  --mar-surface-50: #f8f8fc;
+  --mar-surface-100: #f3f3fa;
+  --mar-surface-200: #e2e2ee;
+  --mar-surface-300: #cdcdd9;
+  --mar-surface-400: #a5a5b8;
+  --mar-surface-500: #7e7e94;
+  --mar-surface-600: #5e5e72;
+  --mar-surface-700: #454558;
+  --mar-surface-800: #303042;
+  --mar-surface-900: #1f1f30;
+  --mar-surface-950: #141422;
+
+  --mar-primary-color: var(--mar-primary-500);
+  --mar-primary-contrast-color: #131322;
+  --mar-primary-hover-color: #eda595;
+  --mar-primary-active-color: var(--mar-primary-600);
+  --mar-primary-color-rgb: 254, 148, 124;
+
+  --mar-text-color: #131322;
+  --mar-text-muted-color: var(--mar-surface-600);
+  --mar-content-background: #ffffff;
+  --mar-content-border-color: #cdcde0;
+  --mar-content-hover-background: #f3f3fa;
+  --mar-content-hover-color: #131322;
+
+  --mar-info-color: #6966da;
+  --mar-info-contrast-color: #ffffff;
+  --mar-info-hover-color: color-mix(in srgb, #6966da 85%, #131322);
+  --mar-help-color: #6966da;
+  --mar-help-contrast-color: #ffffff;
+  --mar-help-hover-color: color-mix(in srgb, #6966da 85%, #131322);
+
+  --mar-red-400: color-mix(in oklab, #fe947c 80%, #ffffff);
+  --mar-red-500: color-mix(in oklab, #fe947c 85%, #131322);
+  --mar-red-600: color-mix(in oklab, #fe947c 70%, #131322);
+  --mar-red-700: color-mix(in oklab, #fe947c 55%, #131322);
+  --mar-orange-500: color-mix(in oklab, #fe947c 50%, #eda595);
+  --mar-orange-600: color-mix(in oklab, #eda595 75%, #131322);
+  --mar-orange-700: color-mix(in oklab, #eda595 60%, #131322);
+  --mar-amber-500: #eda595;
+  --mar-amber-600: color-mix(in oklab, #eda595 80%, #131322);
+  --mar-amber-700: color-mix(in oklab, #eda595 65%, #131322);
+  --mar-yellow-500: color-mix(in oklab, #eda595 70%, #ffffff);
+  --mar-yellow-600: #eda595;
+  --mar-green-500: color-mix(in oklab, #6966da 50%, #7e7e94);
+  --mar-green-600: color-mix(in oklab, #6966da 50%, #5e5e72);
+  --mar-green-700: color-mix(in oklab, #6966da 50%, #454558);
+  --mar-blue-500: #6966da;
+  --mar-blue-600: color-mix(in oklab, #6966da 85%, #131322);
+  --mar-blue-700: color-mix(in oklab, #6966da 70%, #131322);
+  --mar-purple-500: color-mix(in oklab, #6966da 65%, #fe947c);
+  --mar-purple-600: color-mix(in oklab, #6966da 65%, #eda595);
+  --mar-purple-700: color-mix(in oklab, #6966da 75%, #131322);
+  --mar-teal-500: color-mix(in oklab, #6966da 55%, #a5a5b8);
+
+  --mar-overlay-color: #ffffff;
+  --mar-overlay-muted-color: color-mix(in srgb, #ffffff, transparent 22%);
+  --mar-overlay-backdrop: color-mix(in srgb, #131322, transparent 58%);
+  --mar-overlay-text-shadow: 0 0.0625em 0.1875em color-mix(in srgb, #131322, transparent 60%);
+  --mar-overlay-title-shadow: 0 0.125em 0.75em color-mix(in srgb, #131322, transparent 45%);
+  --mar-overlay-scrim: linear-gradient(
+    to bottom,
+    color-mix(in srgb, #131322, transparent 66%) 0%,
+    color-mix(in srgb, #131322, transparent 88%) 38%,
+    color-mix(in srgb, #131322, transparent 84%) 64%,
+    color-mix(in srgb, #131322, transparent 60%) 100%
+  );
+
+  --mar-code-bg: #131322;
+  --mar-code-fg: #e2e2ee;
+  --mar-code-keyword: #fe947c;
+  --mar-code-literal: #eda595;
+  --mar-code-string: color-mix(in srgb, #6966da 45%, #ffffff);
+  --mar-code-escape: color-mix(in srgb, #fe947c 55%, #ffffff);
+  --mar-code-comment: #7e7e94;
+  --mar-code-function: color-mix(in srgb, #6966da 70%, #ffffff);
+  --mar-code-name: color-mix(in srgb, #eda595 60%, #ffffff);
+  --mar-code-tag: color-mix(in srgb, #fe947c 70%, #6966da);
+  --mar-code-default: #cdcdd9;
+
+  --mar-paper-background: #ffffff;
+  --mar-paper-color: #131322;
+  --mar-paper-link: #6966da;
+  --mar-paper-border: #cdcdd9;
+  --mar-paper-muted: #7e7e94;
+
+  --mar-sidebar-border: #cdcde0;
+  --mar-sidebar-text: #131322;
+  --mar-sidebar-text-muted: var(--mar-surface-600);
+
+  --mar-record-card-background: #ffffff;
+  --mar-record-card-icon-background: #efefff;
+
+  --glass-border-strong: color-mix(in oklab, #131322, transparent 86%);
+  --glass-shadow: 0 0.75em 2em -1em color-mix(in oklab, #131322, transparent 82%);
+  --mar-page-raised-shadow-color: color-mix(in oklab, #131322, transparent 86%);
+}
+
+:root[data-mar-theme="nimtech"][data-theme="dark"],
+:root[data-mar-theme="nimtech"].dark,
+html[data-mar-theme="nimtech"].dark {
+  --mar-surface-0: #13131a;
+  --mar-surface-50: #1d1d2f;
+  --mar-surface-100: #19191f;
+  --mar-surface-200: #383849;
+  --mar-surface-300: color-mix(in srgb, #383849 75%, #a5a5b8);
+  --mar-surface-400: color-mix(in srgb, #383849 46%, #a5a5b8);
+  --mar-surface-500: #a5a5b8;
+  --mar-surface-600: #cdcdd9;
+  --mar-surface-700: #e2e2ee;
+  --mar-surface-800: #f0f0f8;
+  --mar-surface-900: #f8f8fc;
+  --mar-surface-950: #ffffff;
+
+  --mar-primary-color: var(--mar-primary-500);
+  --mar-primary-contrast-color: #131322;
+  --mar-primary-hover-color: #eda595;
+  --mar-primary-active-color: var(--mar-primary-400);
+  --mar-primary-color-rgb: 254, 148, 124;
+
+  --mar-text-color: #ffffff;
+  --mar-text-muted-color: var(--mar-surface-500);
+  --mar-content-background: #20212b;
+  --mar-content-border-color: #282833;
+  --mar-content-hover-background: color-mix(in srgb, #35346a 50%, #252446);
+  --mar-content-hover-color: #ffffff;
+  --mar-highlight-color: #ffffff;
+  --mar-highlight-focus-color: #ffffff;
+
+  --mar-info-color: color-mix(in srgb, #6966da 70%, #ffffff);
+  --mar-info-contrast-color: #131322;
+  --mar-info-hover-color: color-mix(in srgb, #6966da 55%, #ffffff);
+  --mar-help-color: color-mix(in srgb, #6966da 70%, #ffffff);
+  --mar-help-contrast-color: #131322;
+  --mar-help-hover-color: color-mix(in srgb, #6966da 55%, #ffffff);
+
+  --mar-red-700: color-mix(in oklab, #fe947c 70%, #ffffff);
+  --mar-green-700: color-mix(in oklab, #6966da 50%, #cdcdd9);
+  --mar-amber-700: color-mix(in oklab, #eda595 75%, #ffffff);
+  --mar-orange-700: color-mix(in oklab, #fe947c 50%, #ffffff);
+
+  --mar-code-bg: #131322;
+
+  --mar-sidebar-border: #282833;
+  --mar-sidebar-text: #ffffff;
+  --mar-sidebar-text-muted: var(--mar-surface-500);
+  --mar-sidebar-hover: #252446;
+  --mar-sidebar-group-bg: #2b2a4f;
+  --mar-sidebar-active-text: #ffffff;
+
+  --mar-record-card-background: #20212b;
+  --mar-record-card-icon-background: #383849;
+
+  --glass-surface: color-mix(in oklab, #1d1d2f, transparent 34%);
+  --glass-surface-raised: color-mix(in oklab, #1d1d2f, transparent 20%);
+  --glass-surface-overlay: color-mix(in oklab, #1d1d2f, transparent 8%);
+  --glass-border: color-mix(in oklab, #282833, transparent 30%);
+  --glass-border-strong: #383849;
+  --glass-shadow: 0 1em 2.5em -1.25em color-mix(in oklab, #131322, transparent 30%);
+  --mar-page-raised-shadow-color: color-mix(in oklab, #131322, transparent 45%);
+}
+
+:root[data-mar-theme="nimtech"] .mar-overlay-dark {
+  --mar-overlay-color: #131322;
+  --mar-overlay-muted-color: color-mix(in srgb, #131322, transparent 22%);
+  --mar-overlay-backdrop: color-mix(in srgb, #ffffff, transparent 48%);
+  --mar-overlay-text-shadow: 0 0.0625em 0.1875em color-mix(in srgb, #ffffff, transparent 45%);
+  --mar-overlay-title-shadow: 0 0.125em 0.75em color-mix(in srgb, #ffffff, transparent 30%);
+  --mar-overlay-scrim: linear-gradient(
+    to bottom,
+    color-mix(in srgb, #ffffff, transparent 66%) 0%,
+    color-mix(in srgb, #ffffff, transparent 88%) 38%,
+    color-mix(in srgb, #ffffff, transparent 84%) 64%,
+    color-mix(in srgb, #ffffff, transparent 60%) 100%
+  );
+}

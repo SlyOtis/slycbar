@@ -1,0 +1,433 @@
+/* CSS Variables for Design System */
+:root {
+  /* Basic Colors */
+  --color-pink-1: #8c2367;
+  --color-pink-2: #e1bcd4;
+  --color-pink-3: #887588;
+  --color-pink-4: #e3e1f0;
+
+  --color-yellow-1: #fdd9ac;
+  --color-yellow-2: #fae49a;
+
+  --color-white: #ffffff;
+
+  --color-black: #000000;
+  --color-black-1: #2d1c2e;
+  --color-black-2: #2c212d;
+  --color-black-3: #1d1b20;
+  --color-black-4: #2c2458;
+  --color-black-5: #3f3c50;
+  --color-black-6: #171118;
+  --color-black-7: #292735;
+  --color-black-8: #24242a;
+
+  --color-gray-1: #fafaff;
+  --color-gray-2: #eaeaea;
+  --color-gray-3: #ececef;
+  --color-gray-4: #9491a6;
+  --color-gray-5: #ebeef8;
+  --color-gray-6: #757575;
+  --color-gray-7: #cacadf;
+  --color-gray-8: #444451;
+  --color-gray-9: #f5f5fa;
+  --color-gray-10: #9491a6;
+  --color-gray-11: #f3f3f5;
+
+  --color-grey-1: #b9b8b8;
+  --color-grey-2: #cecece;
+  --color-grey-3: #878598;
+  --color-grey-4: #747474;
+  --color-grey-5: #d7d7d7;
+  --color-grey-6: #ccc8e7;
+  --color-grey-7: #939399;
+  --color-grey-8: #707070;
+  --color-grey-9: #e8e8e8;
+  --color-grey-10: #7a7878;
+  --color-grey-11: #766c76;
+  --color-grey-12: #514651;
+  --color-grey-13: #767488;
+  --color-grey-14: #373137;
+
+  --color-purple-1: #513555;
+  --color-purple-2: #8b7b8b;
+  --color-purple-3: #49314a;
+  --color-purple-4: #efefff;
+
+  --color-brown-1: #443b1c;
+  --color-brown-2: #1c221d;
+  --color-brown-3: #645c41;
+  --color-brown-4: #38311c;
+
+  --color-red-1: #5d3131;
+  --color-red-2: #fbcbcb;
+  --color-red-3: #b3253a;
+  --color-red-4: #7f5555;
+  --color-red-5: #452f2f;
+  --color-red-6: #7d1a29;
+  --color-red-7: #7d1a29;
+  --color-red-8: #4e111a;
+
+  --color-green-1: #1a261b;
+  --color-green-2: #c0edc3;
+  --color-green-3: #345236;
+
+  --color-blue-1: #2c2458;
+
+  /* Semantic Colors */
+  --color-primary: var(--color-pink-1);
+  --color-primary-hover: #7a1f5a;
+  --color-primary-active: #68194d;
+  --color-secondary: var(--color-black-2);
+
+  /* Border Radius */
+  --border-radius-none: 0;
+  --border-radius-xs: 2px;
+  --border-radius-sm: 4px;
+  --border-radius-md: 6px;
+  --border-radius-lg: 8px;
+  --border-radius-xl: 12px;
+
+  /* Base */
+  --transition-duration: 0.2s;
+  --icon-size: 1em;
+  --disabled-opacity: 0.6;
+
+  /* Focus Ring */
+  --focus-ring-width: 1px;
+  --focus-ring-style: solid;
+  --focus-ring-color: var(--color-primary);
+  --focus-ring-offset: 2px;
+  --focus-ring-shadow: none;
+
+  /* Content */
+  --content-bg: var(--color-white);
+  --content-hover-bg: var(--color-gray-9);
+  --content-border-radius: var(--border-radius-md);
+  --content-border-color: var(--color-gray-2);
+  --anchor-gutter: 2px;
+  --mask-transition-duration: 0.3s;
+
+  /* Form Field */
+  --form-field-padding-x: calc(0.75em + 1px);
+  --form-field-padding-y: calc(0.5em + 1px);
+  --form-field-ring: inset 0 0 0 1px var(--form-field-border-color);
+  --form-field-ring-focus: inset 0 0 0 2px var(--form-field-focus-border-color);
+  --form-field-sm-padding-x: 0.625em;
+  --form-field-sm-padding-y: 0.375em;
+  --form-field-sm-font-size: 0.875em;
+  --form-field-lg-padding-x: 0.875em;
+  --form-field-lg-padding-y: 0.625em;
+  --form-field-lg-font-size: 1.125em;
+  --form-field-border-radius: var(--border-radius-md);
+  --form-field-border-color: var(--color-grey-1);
+  --form-field-hover-border-color: var(--color-gray-4);
+  --form-field-focus-border-color: var(--color-primary);
+  --form-field-invalid-border-color: var(--color-red-3);
+  --form-field-bg: var(--color-white);
+  --form-field-disabled-bg: var(--color-gray-2);
+  --form-field-disabled-color: var(--color-grey-3);
+  --form-field-placeholder-color: var(--color-grey-3);
+  --form-field-shadow: 0 0 #0000, 0 0 #0000, 0 1px 2px 0 rgba(18, 18, 23, 0.05);
+  --form-field-transition: border-color var(--transition-duration), background-color var(--transition-duration);
+
+  /* List */
+  --list-padding: 0.25em 0.25em;
+  --list-gap: 2px;
+  --list-header-padding: 0.5em 1em 0.25em 1em;
+  --list-option-padding: 0.5em 0.75em;
+  --list-option-border-radius: var(--border-radius-sm);
+  --list-option-group-padding: 0.5em 0.75em;
+  --list-option-group-font-weight: 600;
+
+  /* Navigation */
+  --nav-list-padding: 0.25em 0.25em;
+  --nav-list-gap: 2px;
+  --nav-item-padding: 0.5em 0.75em;
+  --nav-item-border-radius: var(--border-radius-sm);
+  --nav-item-gap: 0.5em;
+  --nav-submenu-label-padding: 0.5em 0.75em;
+  --nav-submenu-label-font-weight: 600;
+  --nav-submenu-icon-size: 0.875em;
+
+  /* Overlay */
+  --overlay-select-border-radius: var(--border-radius-md);
+  --overlay-select-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --overlay-popover-border-radius: var(--border-radius-md);
+  --overlay-popover-padding: 0.75em;
+  --overlay-popover-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --overlay-modal-border-radius: var(--border-radius-xl);
+  --overlay-modal-padding: 1.25em;
+  --overlay-modal-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  --overlay-nav-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+
+  /* DataTable */
+  --datatable-bg: var(--color-white);
+  --datatable-hover-bg: var(--color-gray-9);
+
+  /* Border Colors */
+  --border-default: var(--color-grey-1, #d6d5dd);
+  --border-yellow-1: var(--color-yellow-1);
+  --border-red-1: var(--color-red-3);
+  --border-red-3: var(--color-red-3);
+
+  /* Background Colors */
+  --bg-disabled: var(--color-gray-2, #eaeaea);
+
+  /* Text Colors */
+  --text-default: var(--color-grey-4, #747474);
+  --text-disabled: var(--color-grey-3, #878598);
+
+  /* Button-specific variables */
+  --button-primary-bg: var(--color-primary);
+  --button-primary-text: var(--color-white);
+  --button-primary-border: var(--color-primary);
+  --button-primary-hover-bg: var(--color-white);
+  --button-primary-hover-text: var(--color-black-3);
+  --button-primary-active-bg: var(--color-purple-3);
+  --button-primary-active-text: var(--color-white);
+
+  --button-secondary-bg: var(--color-secondary);
+  --button-secondary-text: var(--color-white);
+  --button-secondary-border: var(--color-secondary);
+  --button-secondary-hover-bg: var(--color-purple-3);
+  --button-secondary-hover-text: var(--color-white);
+  --button-secondary-active-bg: var(--color-white);
+  --button-secondary-active-text: var(--color-black-1);
+
+  --button-danger-bg: var(--color-red-3);
+  --button-danger-text: var(--color-white);
+  --button-danger-border: var(--color-red-3);
+  --button-danger-hover-bg: var(--color-red-7);
+  --button-danger-hover-text: var(--color-white);
+  --button-danger-active-bg: var(--color-red-8);
+  --button-danger-active-text: var(--color-white);
+
+  --button-success-bg: var(--color-green-2);
+  --button-success-text: var(--color-green-1);
+  --button-success-border: var(--color-green-2);
+  --button-success-hover-bg: var(--color-green-3);
+  --button-success-hover-text: var(--color-white);
+  --button-success-active-bg: var(--color-brown-2);
+  --button-success-active-text: var(--color-white);
+
+  --button-info-bg: var(--color-gray-7);
+  --button-info-text: var(--color-black-3);
+  --button-info-border: var(--color-gray-7);
+  --button-info-hover-bg: var(--color-gray-8);
+  --button-info-hover-text: var(--color-white);
+  --button-info-active-bg: var(--color-black-8);
+  --button-info-active-text: var(--color-white);
+
+  --button-warning-bg: var(--color-yellow-2);
+  --button-warning-text: var(--color-brown-1);
+  --button-warning-border: var(--color-yellow-2);
+  --button-warning-hover-bg: var(--color-brown-3);
+  --button-warning-hover-text: var(--color-white);
+  --button-warning-active-bg: var(--color-brown-4);
+  --button-warning-active-text: var(--color-white);
+
+  /* Common button properties */
+  --button-border-radius: 2em;
+  --button-border-width: 2px;
+  --button-padding-x: var(--form-field-padding-x);
+  --button-padding-y: var(--form-field-padding-y);
+  --button-font-weight: 500;
+  --button-transition: all 200ms ease;
+
+  /* Text and Link button variants */
+  --button-text-bg: transparent;
+  --button-text-text: var(--color-black-3);
+  --button-text-border: transparent;
+  --button-text-hover-bg: var(--color-primary);
+  --button-text-hover-text: var(--color-white);
+  --button-text-active-bg: var(--color-purple-3);
+  --button-text-active-text: var(--color-white);
+
+  /* Text button variants for different severities */
+  --button-text-danger-text: var(--color-red-1);
+  --button-text-danger-hover-bg: var(--color-red-3);
+  --button-text-danger-active-bg: var(--color-purple-3);
+
+  --button-text-success-text: var(--color-green-1);
+  --button-text-success-hover-bg: var(--color-green-2);
+  --button-text-success-active-bg: var(--color-green-1);
+
+  --button-text-info-text: var(--color-black-3);
+  --button-text-info-hover-bg: var(--color-gray-7);
+  --button-text-info-active-bg: var(--color-black-3);
+
+  --button-text-warning-text: var(--color-brown-1);
+  --button-text-warning-hover-bg: var(--color-yellow-1);
+  --button-text-warning-active-bg: var(--color-brown-1);
+
+  --button-text-help-text: var(--color-purple-1);
+  --button-text-help-hover-bg: var(--color-purple-2);
+  --button-text-help-active-bg: var(--color-purple-1);
+
+  --button-link-bg: transparent;
+  --button-link-text: var(--color-primary);
+  --button-link-border: transparent;
+  --button-link-hover-bg: transparent;
+  --button-link-hover-text: var(--color-primary);
+  --button-link-active-bg: transparent;
+  --button-link-active-text: var(--color-primary);
+
+  /* Help button variant */
+  --button-help-bg: var(--color-purple-2);
+  --button-help-text: var(--color-white);
+  --button-help-border: var(--color-purple-2);
+  --button-help-hover-bg: var(--color-purple-1);
+  --button-help-hover-text: var(--color-white);
+  --button-help-active-bg: var(--color-purple-1);
+  --button-help-active-text: var(--color-white);
+
+  --mar-news-item-pad: 0.875em 1em;
+  --mar-news-item-desc-lines: 3;
+
+  --mar-grid-item-pad: 0.875em 1em;
+  --mar-grid-item-gap: 0.5em;
+  --mar-grid-item-radius: var(--mar-content-border-radius);
+  --mar-grid-item-tile: 2.5em;
+  --mar-grid-item-desc-lines: 3;
+  --mar-grid-item-cell-min: 17em;
+}
+
+:root.dark {
+  /* Form Field (dark) */
+  --form-field-border-color: var(--color-grey-12);
+  --form-field-hover-border-color: var(--color-grey-11);
+  --form-field-bg: var(--color-black-6);
+  --form-field-disabled-bg: var(--color-black-5);
+  --form-field-disabled-color: var(--color-gray-4);
+  --form-field-placeholder-color: var(--color-gray-4);
+
+  /* Content (dark) */
+  --content-bg: var(--color-black-2);
+  --content-hover-bg: var(--color-black-5);
+  --content-border-color: var(--color-grey-14);
+
+  /* DataTable (dark) */
+  --datatable-bg: var(--color-black-6);
+  --datatable-hover-bg: var(--color-black-5);
+
+  /* Border Colors */
+  --border-default: var(--color-grey-4, #747474);
+  --border-yellow-1: var(--color-yellow-1);
+  --border-red-1: var(--color-red-3);
+  --border-red-3: var(--color-red-3);
+
+  /* Background Colors */
+  --bg-disabled: var(--color-black-5, #3f3c50);
+
+  /* Text Colors */
+  --text-default: var(--color-grey-2, #cecece);
+  --text-disabled: var(--color-grey-3, #878598);
+
+  /* Button-specific variables */
+  --button-primary-bg: var(--color-primary);
+  --button-primary-text: var(--color-white);
+  --button-primary-border: var(--color-primary);
+  --button-primary-hover-bg: var(--color-white);
+  --button-primary-hover-text: var(--color-black-3);
+  --button-primary-active-bg: var(--color-purple-3);
+  --button-primary-active-text: var(--color-white);
+
+  --button-secondary-bg: var(--color-black-1);
+  --button-secondary-text: var(--color-white);
+  --button-secondary-border: var(--color-black-1);
+  --button-secondary-hover-bg: var(--color-purple-3);
+  --button-secondary-hover-text: var(--color-white);
+  --button-secondary-active-bg: var(--color-white);
+  --button-secondary-active-text: var(--color-black-1);
+
+  --button-danger-bg: var(--color-red-3);
+  --button-danger-text: var(--color-white);
+  --button-danger-border: var(--color-red-3);
+  --button-danger-hover-bg: var(--color-red-7);
+  --button-danger-hover-text: var(--color-white);
+  --button-danger-active-bg: var(--color-red-8);
+  --button-danger-active-text: var(--color-white);
+
+  --button-success-bg: var(--color-green-2);
+  --button-success-text: var(--color-green-1);
+  --button-success-border: var(--color-green-2);
+  --button-success-hover-bg: var(--color-green-3);
+  --button-success-hover-text: var(--color-white);
+  --button-success-active-bg: var(--color-brown-2);
+  --button-success-active-text: var(--color-white);
+
+  --button-info-bg: var(--color-gray-7);
+  --button-info-text: var(--color-black-3);
+  --button-info-border: var(--color-gray-7);
+  --button-info-hover-bg: var(--color-gray-8);
+  --button-info-hover-text: var(--color-white);
+  --button-info-active-bg: var(--color-black-8);
+  --button-info-active-text: var(--color-white);
+
+  --button-warning-bg: var(--color-yellow-2);
+  --button-warning-text: var(--color-brown-1);
+  --button-warning-border: var(--color-yellow-2);
+  --button-warning-hover-bg: var(--color-brown-3);
+  --button-warning-hover-text: var(--color-white);
+  --button-warning-active-bg: var(--color-brown-4);
+  --button-warning-active-text: var(--color-white);
+
+  /* Common button properties */
+  --button-border-radius: 2em;
+  --button-border-width: 2px;
+  --button-padding-x: var(--form-field-padding-x);
+  --button-padding-y: var(--form-field-padding-y);
+  --button-font-weight: 500;
+  --button-transition: all 200ms ease;
+
+  /* Text and Link button variants */
+  --button-text-bg: transparent;
+  --button-text-text: var(--color-white);
+  --button-text-border: transparent;
+  --button-text-hover-bg: var(--color-primary);
+  --button-text-hover-text: var(--color-white);
+  --button-text-active-bg: var(--color-purple-3);
+  --button-text-active-text: var(--color-white);
+
+  /* Text button variants for different severities */
+  --button-text-danger-text: var(--color-white);
+  --button-text-danger-bg: var(--color-red-1);
+  --button-text-danger-hover-bg: var(--color-red-3);
+  --button-text-danger-active-bg: var(--color-red-1);
+
+  --button-text-success-text: var(--color-white);
+  --button-text-success-bg: var(--color-green-1);
+  --button-text-success-hover-bg: var(--color-green-2);
+  --button-text-success-active-bg: var(--color-green-1);
+
+  --button-text-info-text: var(--color-white);
+  --button-text-info-bg: var(--color-black-1);
+  --button-text-info-hover-bg: var(--color-black-3);
+  --button-text-info-active-bg: var(--color-black-1);
+
+  --button-text-warning-text: var(--color-white);
+  --button-text-warning-bg: var(--color-yellow-1);
+  --button-text-warning-hover-bg: var(--color-primary);
+  --button-text-warning-active-bg: var(--color-brown-1);
+
+  --button-text-help-text: var(--color-purple-1);
+  --button-text-help-hover-bg: var(--color-purple-2);
+  --button-text-help-active-bg: var(--color-purple-1);
+
+  --button-link-bg: transparent;
+  --button-link-text: var(--color-primary);
+  --button-link-border: transparent;
+  --button-link-hover-bg: transparent;
+  --button-link-hover-text: var(--color-primary);
+  --button-link-active-bg: transparent;
+  --button-link-active-text: var(--color-primary);
+
+  /* Help button variant */
+  --button-help-bg: var(--color-purple-2);
+  --button-help-text: var(--color-white);
+  --button-help-border: var(--color-purple-2);
+  --button-help-hover-bg: var(--color-purple-1);
+  --button-help-hover-text: var(--color-white);
+  --button-help-active-bg: var(--color-purple-1);
+  --button-help-active-text: var(--color-white);
+}

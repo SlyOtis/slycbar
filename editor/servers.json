@@ -1,0 +1,267 @@
+[
+  {
+    "name": "typescript",
+    "languages": {
+      "ts": "typescript",
+      "mts": "typescript",
+      "cts": "typescript",
+      "tsx": "typescriptreact",
+      "js": "javascript",
+      "mjs": "javascript",
+      "cjs": "javascript",
+      "jsx": "javascriptreact"
+    },
+    "check": "test -x \"$S/typescript/node_modules/.bin/typescript-language-server\"",
+    "install": "mkdir -p \"$S/typescript\" && cd \"$S/typescript\" && { [ -f package.json ] || echo '{}' > package.json; } && pnpm add typescript typescript-language-server",
+    "run": "exec \"$S/typescript/node_modules/.bin/typescript-language-server\" --stdio"
+  },
+  {
+    "name": "json",
+    "languages": {
+      "json": "json",
+      "jsonc": "jsonc"
+    },
+    "check": "test -x \"$S/web/node_modules/.bin/vscode-json-language-server\"",
+    "install": "mkdir -p \"$S/web\" && cd \"$S/web\" && { [ -f package.json ] || echo '{}' > package.json; } && pnpm add vscode-langservers-extracted",
+    "run": "exec \"$S/web/node_modules/.bin/vscode-json-language-server\" --stdio"
+  },
+  {
+    "name": "html",
+    "languages": {
+      "html": "html",
+      "htm": "html"
+    },
+    "check": "test -x \"$S/web/node_modules/.bin/vscode-html-language-server\"",
+    "install": "mkdir -p \"$S/web\" && cd \"$S/web\" && { [ -f package.json ] || echo '{}' > package.json; } && pnpm add vscode-langservers-extracted",
+    "run": "exec \"$S/web/node_modules/.bin/vscode-html-language-server\" --stdio"
+  },
+  {
+    "name": "css",
+    "languages": {
+      "css": "css",
+      "scss": "scss",
+      "less": "less"
+    },
+    "check": "test -x \"$S/web/node_modules/.bin/vscode-css-language-server\"",
+    "install": "mkdir -p \"$S/web\" && cd \"$S/web\" && { [ -f package.json ] || echo '{}' > package.json; } && pnpm add vscode-langservers-extracted",
+    "run": "exec \"$S/web/node_modules/.bin/vscode-css-language-server\" --stdio"
+  },
+  {
+    "name": "yaml",
+    "languages": {
+      "yaml": "yaml",
+      "yml": "yaml"
+    },
+    "check": "test -x \"$S/yaml/node_modules/.bin/yaml-language-server\"",
+    "install": "mkdir -p \"$S/yaml\" && cd \"$S/yaml\" && { [ -f package.json ] || echo '{}' > package.json; } && pnpm add yaml-language-server",
+    "run": "exec \"$S/yaml/node_modules/.bin/yaml-language-server\" --stdio"
+  },
+  {
+    "name": "bash",
+    "languages": {
+      "sh": "shellscript",
+      "bash": "shellscript",
+      "zsh": "shellscript"
+    },
+    "check": "test -x \"$S/bash/node_modules/.bin/bash-language-server\"",
+    "install": "mkdir -p \"$S/bash\" && cd \"$S/bash\" && { [ -f package.json ] || echo '{}' > package.json; } && pnpm add bash-language-server",
+    "run": "exec \"$S/bash/node_modules/.bin/bash-language-server\" start"
+  },
+  {
+    "name": "svelte",
+    "languages": {
+      "svelte": "svelte"
+    },
+    "check": "test -x \"$S/svelte/node_modules/.bin/svelteserver\"",
+    "install": "mkdir -p \"$S/svelte\" && cd \"$S/svelte\" && { [ -f package.json ] || echo '{}' > package.json; } && pnpm add svelte-language-server",
+    "run": "exec \"$S/svelte/node_modules/.bin/svelteserver\" --stdio"
+  },
+  {
+    "name": "docker",
+    "languages": {
+      "dockerfile": "dockerfile"
+    },
+    "check": "test -x \"$S/docker/node_modules/.bin/docker-langserver\"",
+    "install": "mkdir -p \"$S/docker\" && cd \"$S/docker\" && { [ -f package.json ] || echo '{}' > package.json; } && pnpm add dockerfile-language-server-nodejs",
+    "run": "exec \"$S/docker/node_modules/.bin/docker-langserver\" --stdio"
+  },
+  {
+    "name": "pyright",
+    "languages": {
+      "py": "python",
+      "pyi": "python"
+    },
+    "check": "test -x \"$S/pyright/node_modules/.bin/pyright-langserver\"",
+    "install": "mkdir -p \"$S/pyright\" && cd \"$S/pyright\" && { [ -f package.json ] || echo '{}' > package.json; } && pnpm add pyright",
+    "run": "exec \"$S/pyright/node_modules/.bin/pyright-langserver\" --stdio"
+  },
+  {
+    "name": "gopls",
+    "languages": {
+      "go": "go",
+      "mod": "go.mod"
+    },
+    "check": "test -x \"$S/go/gopls\"",
+    "install": "mkdir -p \"$S/go\" && GOBIN=\"$S/go\" go install golang.org/x/tools/gopls@latest",
+    "run": "exec \"$S/go/gopls\""
+  },
+  {
+    "name": "rust-analyzer",
+    "languages": {
+      "rs": "rust"
+    },
+    "check": "rustup which rust-analyzer > /dev/null 2>&1",
+    "install": "rustup component add rust-analyzer",
+    "run": "exec \"$(rustup which rust-analyzer)\""
+  },
+  {
+    "name": "sourcekit",
+    "languages": {
+      "swift": "swift"
+    },
+    "check": "xcrun --find sourcekit-lsp > /dev/null 2>&1",
+    "install": "false",
+    "run": "exec xcrun sourcekit-lsp"
+  },
+  {
+    "name": "clangd",
+    "languages": {
+      "c": "c",
+      "h": "c",
+      "cc": "cpp",
+      "cpp": "cpp",
+      "hpp": "cpp",
+      "m": "objective-c",
+      "mm": "objective-cpp"
+    },
+    "check": "xcrun --find clangd > /dev/null 2>&1",
+    "install": "false",
+    "run": "exec xcrun clangd"
+  },
+  {
+    "name": "lua",
+    "languages": {
+      "lua": "lua"
+    },
+    "check": "command -v lua-language-server > /dev/null",
+    "install": "brew install lua-language-server",
+    "run": "exec lua-language-server"
+  },
+  {
+    "name": "taplo",
+    "languages": {
+      "toml": "toml"
+    },
+    "check": "command -v taplo > /dev/null",
+    "install": "brew install taplo",
+    "run": "exec taplo lsp stdio"
+  },
+  {
+    "name": "terraform",
+    "languages": {
+      "tf": "terraform",
+      "tfvars": "terraform-vars"
+    },
+    "check": "command -v terraform-ls > /dev/null",
+    "install": "brew install hashicorp/tap/terraform-ls",
+    "run": "exec terraform-ls serve"
+  },
+  {
+    "name": "marksman",
+    "languages": {
+      "md": "markdown",
+      "markdown": "markdown"
+    },
+    "check": "command -v marksman > /dev/null",
+    "install": "brew install marksman",
+    "run": "exec marksman server"
+  },
+  {
+    "name": "texlab",
+    "languages": {
+      "tex": "latex",
+      "bib": "bibtex"
+    },
+    "check": "command -v texlab > /dev/null",
+    "install": "brew install texlab",
+    "run": "exec texlab"
+  },
+  {
+    "name": "zls",
+    "languages": {
+      "zig": "zig"
+    },
+    "check": "command -v zls > /dev/null",
+    "install": "brew install zls",
+    "run": "exec zls"
+  },
+  {
+    "name": "kotlin",
+    "languages": {
+      "kt": "kotlin",
+      "kts": "kotlin"
+    },
+    "check": "command -v kotlin-language-server > /dev/null",
+    "install": "brew install kotlin-language-server",
+    "run": "exec kotlin-language-server"
+  },
+  {
+    "name": "jdtls",
+    "languages": {
+      "java": "java"
+    },
+    "check": "command -v jdtls > /dev/null",
+    "install": "brew install jdtls",
+    "run": "exec jdtls"
+  },
+  {
+    "name": "elixir",
+    "languages": {
+      "ex": "elixir",
+      "exs": "elixir"
+    },
+    "check": "command -v elixir-ls > /dev/null",
+    "install": "brew install elixir-ls",
+    "run": "exec elixir-ls"
+  },
+  {
+    "name": "haskell",
+    "languages": {
+      "hs": "haskell"
+    },
+    "check": "command -v haskell-language-server-wrapper > /dev/null",
+    "install": "brew install haskell-language-server",
+    "run": "exec haskell-language-server-wrapper --lsp"
+  },
+  {
+    "name": "clojure",
+    "languages": {
+      "clj": "clojure",
+      "cljs": "clojure",
+      "edn": "clojure"
+    },
+    "check": "command -v clojure-lsp > /dev/null",
+    "install": "brew install clojure-lsp",
+    "run": "exec clojure-lsp"
+  },
+  {
+    "name": "ruby",
+    "languages": {
+      "rb": "ruby",
+      "rake": "ruby",
+      "gemspec": "ruby"
+    },
+    "check": "command -v ruby-lsp > /dev/null",
+    "install": "brew install ruby-lsp",
+    "run": "exec ruby-lsp"
+  },
+  {
+    "name": "vue",
+    "languages": {
+      "vue": "vue"
+    },
+    "check": "command -v vue-language-server > /dev/null",
+    "install": "brew install vue-language-server",
+    "run": "exec vue-language-server --stdio"
+  }
+]

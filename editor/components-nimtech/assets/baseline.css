@@ -1,0 +1,97 @@
+@layer components;
+
+@import "./theme.css" layer(components);
+@import "./variables.css";
+@import "./panel.css" layer(components);
+@import "./glass.css" layer(components);
+@import "./datetime.css" layer(components);
+@import "./ifta.css" layer(components);
+@import "./skeleton.css" layer(components);
+@import "./wash.css" layer(components);
+@import "./grain.css" layer(components);
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/inter-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Source Serif 4";
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url("./fonts/source-serif-4-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("./fonts/jetbrains-mono-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Nunito";
+  font-style: normal;
+  font-weight: 200 1000;
+  font-display: swap;
+  src: url("./fonts/nunito-latin.woff2") format("woff2");
+}
+
+@layer components {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  :root {
+    font-family: var(--mar-font-family);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--mar-surface-300) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 0.375em;
+    height: 0.375em;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: var(--mar-surface-300);
+    border-radius: 0.1875em;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--mar-surface-400);
+  }
+
+  a {
+    text-decoration: none;
+    color: var(--mar-primary-color);
+    transition: color 0.2s ease;
+  }
+
+  @media (hover: hover) {
+    a:hover {
+      color: var(--mar-primary-hover-color);
+    }
+  }
+}
+
+:root {
+  --mar-focus-color: var(--mar-primary-color);
+  --mar-focus-width: 0.125em;
+  --mar-focus-offset: calc(var(--mar-focus-width) * -1);
+}
+
+:where([class^="mar-"], [class*=" mar-"]):focus-visible {
+  outline: var(--mar-focus-width) solid var(--mar-focus-color);
+  outline-offset: var(--mar-focus-offset);
+}

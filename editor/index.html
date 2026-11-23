@@ -1,0 +1,94 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+:root { --mar-code-bg: #1e1f22; }
+html, body { position: fixed; inset: 0; overflow: hidden; overscroll-behavior: none; }
+html, body, #app { height: 100%; margin: 0; background: #1e1f22; color: rgba(255, 255, 255, 0.66); font: 0.8rem/1.4 -apple-system, sans-serif; }
+.idle { --tx: 0; --ty: 0; position: relative; height: 100%; overflow: hidden; background: radial-gradient(circle at 50% 44%, #262a33 0%, #15161a 60%); perspective: 900px; }
+.sky { position: absolute; inset: -50%; will-change: transform; }
+.sky.a { background: radial-gradient(1.5px 1.5px at 20% 30%, rgba(255, 255, 255, 0.7) 50%, transparent 51%) 0 0 / 190px 170px, radial-gradient(1px 1px at 70% 60%, rgba(251, 177, 104, 0.8) 50%, transparent 51%) 0 0 / 130px 210px; animation: drift 120s linear infinite; }
+.sky.b { background: radial-gradient(2px 2px at 40% 80%, rgba(120, 190, 255, 0.6) 50%, transparent 51%) 0 0 / 310px 260px, radial-gradient(1px 1px at 85% 15%, rgba(255, 255, 255, 0.5) 50%, transparent 51%) 0 0 / 90px 120px; animation: drift 80s linear infinite reverse; opacity: 0.7; }
+.sky.c { background: radial-gradient(3px 3px at 55% 45%, rgba(239, 130, 33, 0.5) 50%, transparent 51%) 0 0 / 520px 440px; animation: drift 50s linear infinite; opacity: 0.6; }
+@keyframes drift { to { transform: translate3d(-12%, 9%, 0) rotate(8deg); } }
+.floor { position: absolute; left: -50%; right: -50%; bottom: -8%; height: 52%; transform: rotateX(74deg); transform-origin: 50% 100%; overflow: hidden; opacity: 0.5; -webkit-mask-image: linear-gradient(to top, #000 10%, transparent 85%); }
+.floor i { position: absolute; inset: -100% 0 0 0; background: repeating-linear-gradient(to right, rgba(239, 130, 33, 0.35) 0 1px, transparent 1px 60px), repeating-linear-gradient(to bottom, rgba(120, 160, 255, 0.35) 0 1px, transparent 1px 60px); animation: glide 4s linear infinite; will-change: transform; }
+@keyframes glide { to { transform: translate3d(0, 60px, 0); } }
+.tunnel { position: absolute; left: 50%; top: 44%; width: 0; height: 0; transform: translate3d(calc(var(--tx) * 60px), calc(var(--ty) * 60px), 0); transition: transform 0.6s ease-out; }
+.tunnel i { position: absolute; left: -9vmin; top: -9vmin; width: 18vmin; height: 18vmin; border-radius: 28%; border: 1px solid rgba(140, 170, 255, 0.5); opacity: 0; animation: fly 12s linear infinite; will-change: transform, opacity; }
+.tunnel i:nth-child(odd) { border-color: rgba(239, 130, 33, 0.5); border-radius: 50%; }
+@keyframes fly { 0% { transform: scale(0.2) rotate(0deg); opacity: 0; } 15% { opacity: 0.55; } 100% { transform: scale(9) rotate(120deg); opacity: 0; } }
+.idle-stage { position: absolute; left: 50%; top: 44%; width: min(38vh, 38vw); aspect-ratio: 1; margin: calc(min(38vh, 38vw) / -2) 0 0 calc(min(38vh, 38vw) / -2); transform-style: preserve-3d; transform: rotateY(calc(var(--tx) * 34deg)) rotateX(calc(var(--ty) * -34deg)); transition: transform 0.5s ease-out; }
+.idle-owl { position: absolute; inset: 22%; width: 56%; height: 56%; animation: breathe 6s ease-in-out infinite; will-change: transform; transform: translateZ(40px); }
+.idle-owl.echo { animation: echo 6s linear infinite; opacity: 0; }
+@keyframes echo { 0% { transform: translateZ(40px) scale(1); opacity: 0.45; } 100% { transform: translateZ(40px) scale(3.4); opacity: 0; } }
+.ring { position: absolute; inset: 0; border-radius: 50%; border: 1px dashed rgba(239, 130, 33, 0.45); will-change: transform; }
+.ring.one { animation: turn 40s linear infinite; }
+.ring.two { inset: -14%; border-color: rgba(251, 177, 104, 0.3); border-style: dotted; animation: tilt 26s linear infinite; }
+.ring.three { inset: -30%; border-color: rgba(140, 170, 255, 0.28); animation: tilt 38s linear infinite reverse; }
+@keyframes turn { to { transform: rotate(360deg); } }
+@keyframes tilt { from { transform: rotateX(64deg) rotateZ(0deg); } to { transform: rotateX(64deg) rotateZ(360deg); } }
+@keyframes breathe { 50% { transform: translateZ(40px) scale(1.05); } }
+.orbit { position: absolute; inset: -42%; transform-style: preserve-3d; animation: tilt 30s linear infinite; will-change: transform; }
+.orbit span { position: absolute; left: 50%; top: 50%; width: 11%; height: 11%; margin: -5.5% 0 0 -5.5%; transform: rotate(var(--a)) translateX(430%) rotate(calc(var(--a) * -1)) rotateX(-64deg); }
+.orbit img { width: 100%; height: 100%; opacity: 0.8; }
+.orbit.far { inset: -78%; animation: tilt 55s linear infinite reverse; }
+.cube { position: absolute; width: 9%; height: 9%; transform-style: preserve-3d; animation: tumble 12s linear infinite; will-change: transform; }
+.cube.c1 { left: 4%; top: 46%; } .cube.c2 { left: 88%; top: 44%; animation-duration: 17s; } .cube.c3 { left: 46%; top: 3%; animation-duration: 9s; } .cube.c4 { left: 46%; top: 90%; animation-duration: 21s; }
+.cube i { position: absolute; inset: 0; border: 1px solid rgba(140, 200, 255, 0.6); }
+.cube .f1 { transform: translateZ(1.6vmin); } .cube .f2 { transform: rotateY(180deg) translateZ(1.6vmin); } .cube .f3 { transform: rotateY(90deg) translateZ(1.6vmin); } .cube .f4 { transform: rotateY(-90deg) translateZ(1.6vmin); } .cube .f5 { transform: rotateX(90deg) translateZ(1.6vmin); border-color: rgba(239, 130, 33, 0.7); } .cube .f6 { transform: rotateX(-90deg) translateZ(1.6vmin); border-color: rgba(239, 130, 33, 0.7); }
+@keyframes tumble { to { transform: rotateX(360deg) rotateY(720deg); } }
+.idle-text { position: absolute; inset: auto 0 9% 0; display: grid; gap: 0.3em; justify-items: center; pointer-events: none; }
+.idle-text b { font: 600 1.05rem/1.2 -apple-system, sans-serif; letter-spacing: 0.02em; color: rgba(255, 255, 255, 0.9); }
+.idle-text span { font-size: 0.72rem; color: rgba(255, 255, 255, 0.5); }
+.idle-text .vital { font-size: 0.64rem; color: rgba(255, 255, 255, 0.35); font-variant-numeric: tabular-nums; }
+.mar-editor-frame { height: 100%; }
+.mar-code-block { border: 0; border-radius: 0; }
+.preview { height: 100%; overflow: auto; padding: 1rem 1.5rem; box-sizing: border-box; }
+.web { width: 100%; height: 100%; border: 0; background: #fff; display: block; }
+.mar-editor-frame-divider { inline-size: 9px; background: linear-gradient(to right, transparent calc(50% - 0.5px), rgba(255, 255, 255, 0.16) calc(50% - 0.5px), rgba(255, 255, 255, 0.16) calc(50% + 0.5px), transparent calc(50% + 0.5px)); }
+.media { display: grid; place-items: center; height: 100%; padding: 1rem; box-sizing: border-box; overflow: auto; }
+.media video, .media img { max-width: 100%; max-height: 100%; border-radius: 0.5rem; }
+.checker, .media:has(img) { background: repeating-conic-gradient(rgba(255, 255, 255, 0.05) 0% 25%, transparent 0% 50%) 50% / 1.2rem 1.2rem; }
+.media audio { width: min(40rem, 90%); }
+@keyframes slide { from { opacity: 0; transform: translateX(2rem); } }
+@keyframes rise { from { opacity: 0; } }
+.mar-editor-frame-preview { animation: slide 0.22s ease-out; }
+.mar-editor-frame-code { animation: rise 0.22s ease-out; }
+.sides { height: 100%; overflow: auto; font-size: 0.75rem; }
+.sides .cm-mergeView, .sides .cm-mergeViewEditors { min-height: 100%; }
+#app .cm-editor .cm-scroller .cm-selectionBackground, #app .cm-editor.cm-focused .cm-scroller .cm-selectionBackground { background-color: rgba(120, 160, 230, 0.2) !important; }
+#app .cm-editor ::selection { background-color: rgba(120, 160, 230, 0.2) !important; }
+.cm-tallies .tally { display: inline-flex; gap: 0.35em; padding: 0 0.5em 0 0.2em; font: 600 0.62rem/1.9 ui-monospace, Menlo, monospace; }
+.tally i { font-style: normal; }
+.tally .up { color: #6aab73; }
+.tally .down { color: #f75464; }
+#app .cm-changedLine, #app .cm-insertedLine { background: rgba(106, 171, 115, 0.07) !important; }
+#app .cm-deletedChunk, #app .cm-deletedLine { background: rgba(247, 84, 100, 0.06) !important; }
+#app .cm-changedText { background: rgba(106, 171, 115, 0.1) !important; }
+#app .cm-deletedChunk .cm-deletedText { background: rgba(247, 84, 100, 0.1) !important; }
+#app .cm-changedLineGutter { background: rgba(106, 171, 115, 0.7) !important; }
+#app .cm-deletedLineGutter { background: rgba(247, 84, 100, 0.6) !important; }
+#app .cm-collapsedLines { padding: 0.25em 1em; margin: 0.15em 0; border-radius: 0.4em; background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font: 0.68rem/1.6 -apple-system, sans-serif; cursor: pointer; }
+#app .cm-collapsedLines:hover { background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.9); }
+#app .cm-deletedChunk { position: relative; max-height: 6.6em; overflow: hidden; cursor: pointer; border-radius: 0.4em; }
+#app .cm-deletedChunk.open { max-height: none; }
+#app .cm-deletedChunk:not(.open)::after { content: "removed lines, click to show all"; position: absolute; inset: auto 0 0 0; padding: 1.6em 1em 0.2em; background: linear-gradient(to bottom, transparent, rgba(36, 30, 33, 0.94) 62%); color: rgba(255, 255, 255, 0.55); font: 0.66rem/1.5 -apple-system, sans-serif; text-align: center; pointer-events: none; }
+#app .cm-chunkButtons { display: inline-flex; gap: 0.3em; padding: 0.15em 0.4em; }
+#app button.chunk { border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 1em; background: rgba(30, 31, 34, 0.9); color: rgba(255, 255, 255, 0.8); font: 600 0.62rem/1.6 -apple-system, sans-serif; padding: 0 0.7em; cursor: pointer; }
+#app button.chunk.accept:hover { background: #6aab73; color: #14181a; border-color: #6aab73; }
+#app button.chunk.reject:hover { background: #f75464; color: #fff; border-color: #f75464; }
+.tip { max-width: min(46em, 90vw); padding: 0.5em 0.7em; font: 0.72rem/1.5 -apple-system, sans-serif; color: rgba(255, 255, 255, 0.9); }
+.tip p { margin: 0 0 0.4em; white-space: pre-wrap; }
+.tip pre { margin: 0 0 0.4em; padding: 0.4em 0.6em; border-radius: 0.4em; background: rgba(255, 255, 255, 0.06); font: 0.72rem/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; color: #56a8f5; }
+.tip .where { font: 0.7rem/1.6 ui-monospace, Menlo, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; color: rgba(255, 255, 255, 0.75); }
+.tip .where b { color: #cf8e6d; font-weight: 600; }
+.tip .uses { margin-top: 0.3em; color: rgba(255, 255, 255, 0.5); font-size: 0.68rem; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+.build/
+.build-*/
+celery.*
+.env
+.claude/
+CLAUDE.md
+.impeccable/hook.cache.json

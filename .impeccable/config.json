@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-11-23T14:05:17.429Z",
+        "reason": "user confirmed: answered yes to keeping the four fonts copied with components-nimtech (Inter, Source Serif 4, JetBrains Mono, Nunito)"
+      }
+    ]
+  }
+}
