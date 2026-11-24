@@ -30,29 +30,25 @@ enum Install {
 				given[pair[0]] = pair[1]
 			}
 		}
-		let sign = given["SLYCBAR_SIGN"] ?? "-"
-		let carried = given.keys.sorted().filter { $0 != "SLYCBAR_SIGN" }.map { "<key>" + $0 + "</key><string>" + (given[$0] ?? "") + "</string>" }.joined()
-		let schemes = { (name: String) in "<array><dict><key>CFBundleURLName</key><string>\(name)</string><key>CFBundleURLSchemes</key><array><string>\(name)</string></array></dict></array>" }
+		let sign = "slyed"
+		guard Base.run("/usr/bin/security", ["find-identity", "-p", "codesigning"]).out.contains("\"" + sign + "\"") else { return Base.fail("no code signing identity named " + sign + " in the keychain") }
+		let carried = given.keys.sorted().map { "<key>" + $0 + "</key><string>" + (given[$0] ?? "") + "</string>" }.joined()
+		let schemes = { (names: [String]) in "<array>" + names.map { "<dict><key>CFBundleURLName</key><string>\($0)</string><key>CFBundleURLSchemes</key><array><string>\($0)</string></array></dict>" }.joined() + "</array>" }
 		guard Base.run("/usr/bin/swift", ["build", "-c", "release"], dir: Base.here, quiet: false).code == 0 else { return Base.fail("the build failed") }
 		guard Base.run("pnpm", ["--version"]).code == 0 else { return Base.fail("pnpm is missing, the editor page needs it") }
 
-		for path in [Base.app, Base.trayApp, Base.editApp] {
-			try? fm.removeItem(atPath: path)
-		}
-		let ext = Base.app + "/Contents/PlugIns/widget.appex"
-		guard place("app", Base.app + "/Contents/MacOS/slycbar"), place("widget", ext + "/Contents/MacOS/widget"),
-			place("tray", Base.trayApp + "/Contents/MacOS/tray"), place("editor", Base.editApp + "/Contents/MacOS/editor") else { return Base.fail("a built product is missing under .build/release") }
-		Base.write(Base.app + "/Contents/Info.plist", info(common("slycbar", "slycbar", "slycbar", "APPL") + [("LSUIElement", "<true/>"), ("CFBundleURLTypes", schemes("slycbar")), ("SlycbarCli", Base.bin)]))
-		Base.write(ext + "/Contents/Info.plist", info(common("slycbar.widget", "slycbar", "widget", "XPC!") + [("CFBundleDisplayName", "slycbar"),
+		try? fm.removeItem(atPath: Base.editApp)
+		let ext = Base.editApp + "/Contents/PlugIns/widget.appex"
+		guard place("widget", ext + "/Contents/MacOS/widget"), place("slyed", Base.editApp + "/Contents/MacOS/slyed") else { return Base.fail("a built product is missing under .build/release") }
+		Base.write(ext + "/Contents/Info.plist", info(common("slycbar.slyed.widget", "Slyed", "widget", "XPC!") + [("CFBundleDisplayName", "Slyed"),
 			("NSExtension", "<dict><key>NSExtensionPointIdentifier</key><string>com.apple.widgetkit-extension</string></dict>")]))
-		Base.write(Base.trayApp + "/Contents/Info.plist", info(common("slycbar.tray", "slycbar tray", "tray", "APPL") + [("LSUIElement", "<true/>"), ("CFBundleIconFile", "icon")]))
 		let types = "<array>\n    <dict><key>CFBundleTypeName</key><string>Text</string><key>CFBundleTypeRole</key><string>Editor</string><key>LSHandlerRank</key><string>Default</string>\n      <key>LSItemContentTypes</key><array><string>public.text</string><string>public.source-code</string><string>public.script</string><string>public.json</string><string>public.xml</string><string>public.yaml</string></array></dict>\n    <dict><key>CFBundleTypeName</key><string>File</string><key>CFBundleTypeRole</key><string>Editor</string><key>LSHandlerRank</key><string>Alternate</string>\n      <key>LSItemContentTypes</key><array><string>public.data</string><string>public.folder</string></array></dict>\n  </array>"
-		Base.write(Base.editApp + "/Contents/Info.plist", info(common("slycbar.editor", "slycbar editor", "editor", "APPL") + [("SlycbarCli", Base.bin), ("CFBundleURLTypes", schemes("slycbar-editor")),
+		Base.write(Base.editApp + "/Contents/Info.plist", info(common("slycbar.slyed", "Slyed", "slyed", "APPL") + [("SlycbarCli", Base.bin), ("LSUIElement", "<true/>"), ("LSEnvironment", "<dict>" + carried + "</dict>"), ("CFBundleURLTypes", schemes(["slyed", "slycbar"])),
 			("NSHighResolutionCapable", "<true/>"), ("CFBundleIconFile", "icon"), ("CFBundleDocumentTypes", types)]))
 
-		try? fm.createDirectory(atPath: Base.trayApp + "/Contents/Resources", withIntermediateDirectories: true)
-		for name in ["warp.html", "celery.html", "celery.m4a", "celery.mp4", "editor/icon.png"] {
-			try? fm.copyItem(atPath: Base.here + "/" + name, toPath: Base.trayApp + "/Contents/Resources/" + (name as NSString).lastPathComponent)
+		try? fm.createDirectory(atPath: Base.editApp + "/Contents/Resources", withIntermediateDirectories: true)
+		for name in ["warp.html", "celery.html", "celery.m4a", "editor/icon.png", "editor/tray.svg"] {
+			try? fm.copyItem(atPath: Base.here + "/" + name, toPath: Base.editApp + "/Contents/Resources/" + (name as NSString).lastPathComponent)
 		}
 
 		let build = Base.cache + "/editor/build"
@@ -63,7 +59,6 @@ enum Install {
 		try? fm.removeItem(atPath: build + "/components-nimtech")
 		try? fm.copyItem(atPath: Base.here + "/editor/components-nimtech", toPath: build + "/components-nimtech")
 		guard Base.run("pnpm", ["install", "--frozen-lockfile"], dir: build).code == 0, Base.run("pnpm", ["build"], dir: build).code == 0 else { return Base.fail("the editor page did not build") }
-		try? fm.createDirectory(atPath: Base.editApp + "/Contents/Resources", withIntermediateDirectories: true)
 		try? fm.copyItem(atPath: build + "/dist", toPath: Base.editApp + "/Contents/Resources/editor")
 		try? fm.copyItem(atPath: Base.here + "/editor/servers.json", toPath: Base.editApp + "/Contents/Resources/editor/servers.json")
 		let set = Base.cache + "/icon.iconset"
@@ -74,19 +69,15 @@ enum Install {
 			Base.run("/usr/bin/sips", ["-z", String(size * 2), String(size * 2), Base.here + "/editor/icon.png", "--out", set + "/icon_\(size)x\(size)@2x.png"])
 		}
 		Base.run("/usr/bin/iconutil", ["-c", "icns", set, "-o", Base.editApp + "/Contents/Resources/icon.icns"])
-		try? fm.copyItem(atPath: Base.editApp + "/Contents/Resources/icon.icns", toPath: Base.trayApp + "/Contents/Resources/icon.icns")
 
 		let rights = Base.cache + "/widget.entitlements"
 		Base.write(rights, info([("com.apple.security.app-sandbox", "<true/>"), ("com.apple.security.temporary-exception.files.home-relative-path.read-only", "<array><string>/.cache/slycbar/</string></array>")]))
 		Base.run("/usr/bin/codesign", ["-f", "-s", sign, "--entitlements", rights, ext])
-		for path in [Base.app, Base.trayApp, Base.editApp] {
-			Base.run("/usr/bin/codesign", ["-f", "-s", sign, path])
-		}
+		Base.run("/usr/bin/codesign", ["-f", "-s", sign, Base.editApp])
 		let register = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
-		Base.run(register, ["-f", Base.app])
 		Base.run(register, ["-f", Base.editApp])
 		Base.run("/usr/bin/pluginkit", ["-a", ext])
-		Base.run(Base.editApp + "/Contents/MacOS/editor", ["default"], quiet: false)
+		Base.run(Base.editApp + "/Contents/MacOS/slyed", ["default"], quiet: false)
 
 		try? fm.createDirectory(atPath: (Base.bin as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
 		try? fm.removeItem(atPath: Base.bin)
@@ -96,7 +87,7 @@ enum Install {
 
 		try? fm.createDirectory(atPath: (Base.plist as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
 		Base.write(Base.plist, info([("Label", Base.agent),
-			("ProgramArguments", "<array><string>\(Base.trayApp)/Contents/MacOS/tray</string><string>\(Base.bin)</string><string>\(Base.tray)</string></array>"),
+			("ProgramArguments", "<array><string>\(Base.editApp)/Contents/MacOS/slyed</string><string>tray</string></array>"),
 			("EnvironmentVariables", "<dict><key>PATH</key><string>\(Base.tools()["PATH"] ?? "")</string>" + carried + "</dict>"), ("RunAtLoad", "<true/>"),
 			("KeepAlive", "<dict><key>SuccessfulExit</key><false/></dict>"), ("LimitLoadToSessionType", "Aqua"), ("ProcessType", "Interactive"),
 			("StandardOutPath", Base.tray + "/tray.log"), ("StandardErrorPath", Base.tray + "/tray.log")]))
@@ -109,7 +100,7 @@ enum Install {
 			Thread.sleep(forTimeInterval: 0.2)
 		}
 		Base.run("/bin/launchctl", ["bootstrap", domain, Base.plist])
-		Base.say("installed \(Base.app), \(Base.trayApp), \(Base.editApp), \(Base.bin) and \(Base.plist)")
+		Base.say("installed \(Base.editApp), \(Base.bin) and \(Base.plist)")
 		return 0
 	}
 }

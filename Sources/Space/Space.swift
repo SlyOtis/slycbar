@@ -111,7 +111,8 @@ public enum Space {
 }
 
 final class Work {
-	static let artifacts = "node_modules|target|\\.svelte-kit|dist|build|\\.gradle|\\.next|\\.nuxt|\\.turbo|\\.vite|DerivedData|\\.parcel-cache|vendor"
+	static let artifacts = "node_modules|target|\\.svelte-kit|dist|build|\\.gradle|\\.next|\\.nuxt|\\.turbo|\\.vite|DerivedData|\\.parcel-cache|vendor|\\.build|\\.output|\\.angular|\\.expo|__pycache__|\\.venv|\\.mypy_cache|\\.pytest_cache|\\.ruff_cache|\\.tox|zig-cache|\\.zig-cache|zig-out|_build|\\.dart_tool|cmake-build-[^/]*|\\.cxx"
+	static let caches: Set<String> = [".turbo", ".parcel-cache", ".vite", ".svelte-kit", ".nuxt", ".angular", ".expo", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox", "zig-cache", ".zig-cache", ".dart_tool", "__pycache__"]
 	static let dev = "vite|esbuild|air$|go-build|go run|cargo run|rust-analyzer|gopls|tsserver|playwright|chrome-headless|remote-debugging-port|pnpm dlx|npm exec|mcp|pagecast|nimpress dev|storybook|webpack|tailwindcss|ollama|whisper"
 	static let system = re("^(/Applications/|/System/|/Library/|/usr/libexec/|/usr/sbin/|/usr/bin/|/sbin/|/bin/|<defunct>|[(]|-?(/bin/)?(zsh|bash|sh|login)( |$))")
 

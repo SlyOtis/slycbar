@@ -4,6 +4,8 @@ import Network
 import SwiftUI
 import UniformTypeIdentifiers
 import WebKit
+import WidgetKit
+import tray
 
 let cache = (ProcessInfo.processInfo.environment["SLYCBAR_CACHE"] ?? NSHomeDirectory() + "/.cache/slycbar") + "/editor"
 let pages = (Bundle.main.resourcePath ?? "") + "/editor"
@@ -293,6 +295,7 @@ struct Agent: Identifiable {
 	let socket: String
 	let last: String
 	let questions: [String]
+	let sid: String
 
 	var color: Color {
 		status == "busy" ? Color(red: 0.95, green: 0.65, blue: 0.42) : status == "idle" ? Color.white.opacity(0.4) : Color(red: 0.92, green: 0.74, blue: 0.33)
@@ -310,34 +313,17 @@ final class Model: ObservableObject {
 	@Published var root = "" {
 		didSet {
 			if !stepping, oldValue != root, !oldValue.isEmpty {
-				before.append(oldValue)
-				after = []
+				turned(oldValue)
 			}
 		}
 	}
-	var before: [String] = []
-	var after: [String] = []
 	var stepping = false
+	var turned: (String) -> Void = { _ in }
+	var back: () -> Void = {}
+	var forward: () -> Void = {}
 
-	func step(_ back: Bool) {
-		guard let target = back ? before.popLast() : after.popLast() else {
-			status = back ? "no earlier folder" : "no later folder"
-			return
-		}
-		if back {
-			after.append(root)
-		} else {
-			before.append(root)
-		}
-		stepping = true
-		if roots.contains(target) {
-			root = target
-		} else {
-			roots = roots.map { $0 == root ? target : $0 }
-			adopt(target)
-		}
-		stepping = false
-		changed()
+	func label(_ path: String) -> String {
+		path == NSHomeDirectory() ? "~" : path == "/" ? "/" : (path as NSString).lastPathComponent
 	}
 	@Published var roots: [String] = UserDefaults.standard.stringArray(forKey: "roots") ?? []
 
@@ -589,6 +575,36 @@ final class Model: ObservableObject {
 	@Published var claude = false
 	var decide: (Bool) -> Void = { _ in }
 	var asked = 0
+	@Published var plan = ""
+	@Published var heading = ""
+	@Published var steps: [Step] = []
+	@Published var step = -1
+	@Published var hunks: [Hunk] = []
+	@Published var hunk = -1
+	@Published var region = ""
+	@Published var comparing = ""
+	@Published var remarks: [Note] = []
+	@Published var phase = ""
+	@Published var round = 1
+	@Published var draft = ""
+	@Published var folder = ""
+	@Published var deep = UserDefaults.standard.double(forKey: "deep")
+	var depth = 0.0
+	var visit: (Int) -> Void = { _ in }
+	var judge: (Int, String) -> Void = { _, _ in }
+	var walk: (Bool) -> Void = { _ in }
+	var resume: () -> Void = {}
+	var leave: () -> Void = {}
+
+	var decided: Int { hunks.filter { $0.status != "pending" }.count }
+	var reviewing: Bool { !plan.isEmpty && hunk >= 0 && hunk < hunks.count }
+
+	func follow(_ url: URL) -> OpenURLAction.Result {
+		let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+		guard url.scheme == "slyed", let path = items.first(where: { $0.name == "path" })?.value else { return .systemAction }
+		jump(path, items.first(where: { $0.name == "line" })?.value.flatMap { Int($0) })
+		return .handled
+	}
 
 	func trail() -> [String] {
 		var list = [root]
@@ -931,6 +947,54 @@ struct Row: View {
 	}
 }
 
+final class Scroller: NSScroller {
+	override class var isCompatibleWithOverlayScrollers: Bool { true }
+
+	override func drawKnobSlot(in slotRect: NSRect, highlight flag: Bool) {}
+
+	var over = false {
+		didSet { needsDisplay = true }
+	}
+
+	override func updateTrackingAreas() {
+		super.updateTrackingAreas()
+		trackingAreas.forEach { removeTrackingArea($0) }
+		addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow], owner: self))
+	}
+
+	override func mouseEntered(with event: NSEvent) { over = true }
+	override func mouseExited(with event: NSEvent) { over = false }
+
+	override func drawKnob() {
+		let knob = rect(for: .knob)
+		let wide = over ? 6.0 : 2.5
+		let bar = NSRect(x: bounds.maxX - wide - 1, y: knob.minY + 2, width: wide, height: max(10, knob.height - 4))
+		let path = NSBezierPath(roundedRect: bar, xRadius: wide / 2, yRadius: wide / 2)
+		if over {
+			NSGradient(starting: NSColor(red: 0.94, green: 0.51, blue: 0.13, alpha: 0.95), ending: NSColor(red: 0.71, green: 0.39, blue: 0.18, alpha: 0.95))?.draw(in: path, angle: 90)
+		} else {
+			NSColor.white.withAlphaComponent(0.3).setFill()
+			path.fill()
+		}
+	}
+}
+
+struct Thin: NSViewRepresentable {
+	func makeNSView(context: Context) -> NSView {
+		let view = NSView()
+		DispatchQueue.main.async {
+			guard let scroll = view.enclosingScrollView else { return }
+			let bar = Scroller()
+			bar.scrollerStyle = .overlay
+			scroll.scrollerStyle = .overlay
+			scroll.verticalScroller = bar
+		}
+		return view
+	}
+
+	func updateNSView(_ view: NSView, context: Context) {}
+}
+
 struct Web: NSViewRepresentable {
 	let view: WKWebView
 	func makeNSView(context: Context) -> WKWebView { view }
@@ -987,9 +1051,24 @@ struct Tipped: ViewModifier {
 	}
 }
 
+struct Movable: ViewModifier {
+	@State private var at = CGSize.zero
+	@State private var from = CGSize.zero
+
+	func body(content: Content) -> some View {
+		content.offset(at).gesture(DragGesture(minimumDistance: 3, coordinateSpace: .global).onChanged { drag in
+			at = CGSize(width: from.width + drag.translation.width, height: from.height + drag.translation.height)
+		}.onEnded { _ in from = at })
+	}
+}
+
 extension View {
 	func tip(_ text: String) -> some View {
 		modifier(Tipped(text: text))
+	}
+
+	func movable() -> some View {
+		modifier(Movable())
 	}
 }
 
@@ -1017,16 +1096,18 @@ struct Bubble: View {
 struct Icon: View {
 	let name: String
 	var on = false
+	var tint = Ink.accent
+	var size = 12.0
 	let tip: String
 	let action: () -> Void
 	@State private var over = false
 
 	var body: some View {
 		Button(action: action) {
-			Image(systemName: name).font(.system(size: 12))
+			Image(systemName: name).font(.system(size: size))
 				.foregroundStyle(on ? Color.white : over ? Ink.fg : Ink.dim)
-				.frame(width: 26, height: 22)
-				.background(RoundedRectangle(cornerRadius: 6).fill(on ? Ink.accent : over ? Ink.hover : Color.clear))
+				.frame(width: size + 14, height: size + 10)
+				.background(RoundedRectangle(cornerRadius: 6).fill(on ? tint : over ? Ink.hover : Color.clear))
 				.contentShape(Rectangle())
 		}
 		.buttonStyle(.plain).focusable(false)
@@ -1111,6 +1192,7 @@ struct Meters: View {
 
 struct Markdown: View {
 	let text: String
+	var base = ""
 
 	struct Block: Identifiable {
 		let id: Int
@@ -1159,7 +1241,25 @@ struct Markdown: View {
 	}
 
 	func inline(_ text: String) -> AttributedString {
-		(try? AttributedString(markdown: text, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
+		var out = (try? AttributedString(markdown: text, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
+		let code = out.runs.filter { $0.inlinePresentationIntent?.contains(.code) == true }.map { $0.range }
+		for range in code {
+			out[range].foregroundColor = Color(red: 0.34, green: 0.66, blue: 0.96)
+			out[range].font = .system(size: 11.5, design: .monospaced)
+		}
+		guard !base.isEmpty else { return out }
+		var allowed = CharacterSet.alphanumerics
+		allowed.insert(charactersIn: "-_.~/")
+		var from = out.startIndex
+		for found in String(out.characters).matches(of: #/(/?[\w.\-]+(?:/[\w.\-]+)*\.\w+):(\d+)/#) {
+			let path = String(found.1)
+			let full = path.hasPrefix("/") ? path : base + "/" + path
+			guard let range = out[from...].range(of: String(found.0)) else { continue }
+			from = range.upperBound
+			guard FileManager.default.fileExists(atPath: full), let url = URL(string: "slyed://open?path=" + (full.addingPercentEncoding(withAllowedCharacters: allowed) ?? full) + "&line=" + found.2) else { continue }
+			out[range].link = url
+		}
+		return out
 	}
 
 	var body: some View {
@@ -1209,6 +1309,67 @@ struct Commit: Identifiable {
 	let subject: String
 	let who: String
 	let when: String
+}
+
+struct Note: Identifiable {
+	let id: Int
+	let side: String
+	let line: Int
+	let end: Int
+	let text: String
+	var question = false
+	var answer = ""
+	var change = -1
+	var sent = false
+	var status = ""
+
+	var spot: String {
+		(status.isEmpty ? "" : status + " ") + (side == "change" ? "the whole change" : side == "plan" ? (change >= 0 ? "the plan, at change \(change + 1)" : "the plan") : (side == "base" ? "current " : "proposed ") + "\(line)" + (end > line ? "-\(end)" : ""))
+	}
+}
+
+struct Hunk: Identifiable {
+	let id: Int
+	let change: Int
+	let part: Int
+	let side: String
+	let line: Int
+	let end: Int
+	let rows: [[String: Any]]
+	var status = "pending"
+	var text = ""
+	var sent = false
+
+	var label: String { "\(change + 1).\(part)" }
+
+	var tint: Color {
+		status == "accepted" ? Color(red: 0.42, green: 0.78, blue: 0.56) : status == "rejected" ? Color(red: 1, green: 0.49, blue: 0.43) : Ink.dim
+	}
+
+	var mark: String {
+		status == "accepted" ? "checkmark.circle.fill" : status == "rejected" ? "xmark.circle.fill" : "circle.dashed"
+	}
+}
+
+struct Step: Identifiable {
+	let id: Int
+	let title: String
+	let why: String
+	let path: String
+	let proposed: String
+	let base: String
+	var status: String
+	var notes: [Note]
+	var added = 0
+	var removed = 0
+
+	var tint: Color {
+		status == "accepted" ? Color(red: 0.42, green: 0.78, blue: 0.56) : status == "rejected" ? Color(red: 1, green: 0.49, blue: 0.43) : Ink.dim
+	}
+
+	var mark: String {
+		status == "accepted" ? "checkmark.circle.fill" : status == "rejected" ? "xmark.circle.fill" : "circle.dashed"
+	}
 }
 
 struct Act: View {
@@ -1422,6 +1583,135 @@ struct GitPanel: View {
 	}
 }
 
+struct Verdict: View {
+	let accept: Bool
+	let on: Bool
+	var small = false
+	let tip: String
+	let action: () -> Void
+	@State private var over = false
+
+	var body: some View {
+		let green = Color(red: 0.42, green: 0.78, blue: 0.56)
+		let red = Color(red: 1, green: 0.49, blue: 0.43)
+		let filled = accept || on
+		Button(action: action) {
+			Label(accept ? (on ? "Accepted" : "Accept") : (on ? "Rejected" : "Reject"), systemImage: accept ? (on ? "checkmark.circle.fill" : "checkmark") : (on ? "xmark.circle.fill" : "xmark"))
+				.labelStyle(.titleAndIcon)
+				.font(.system(size: small ? 11 : 12, weight: accept ? .bold : .semibold))
+				.foregroundStyle(filled ? Color.white : over ? red : Ink.fg)
+				.padding(.horizontal, small ? 8 : 11).frame(height: small ? 20 : 26)
+				.background(Capsule().fill(accept ? green.opacity(on ? 1 : over ? 0.95 : 0.8) : on ? red : Color.clear))
+				.overlay(Capsule().strokeBorder(filled ? Color.white.opacity(on ? 0.5 : 0) : over ? red : Ink.dim.opacity(0.6), lineWidth: 1))
+				.contentShape(Capsule())
+		}
+		.buttonStyle(.plain).focusable(false)
+		.onHover { over = $0 }
+		.tip(tip)
+	}
+}
+
+struct Remark: View {
+	let note: Note
+	var base = ""
+
+	var body: some View {
+		VStack(alignment: .leading, spacing: 1) {
+			HStack(alignment: .firstTextBaseline, spacing: 6) {
+				Image(systemName: note.question ? "questionmark.bubble" : "text.bubble").font(.system(size: 10)).foregroundStyle(note.question ? Color(red: 0.34, green: 0.66, blue: 0.96) : Ink.accent)
+				Text(note.spot).font(.system(size: 10, weight: .medium)).monospacedDigit().foregroundStyle(Ink.accent)
+				Markdown(text: note.text, base: base)
+				if !note.sent {
+					Text("unsent").font(.system(size: 9)).foregroundStyle(Ink.dim)
+				}
+			}
+			if !note.answer.isEmpty {
+				Markdown(text: note.answer, base: base).foregroundStyle(Ink.dim).padding(.leading, 16)
+			}
+		}
+	}
+}
+
+struct Feedback: View {
+	@ObservedObject var model: Model
+
+	var body: some View {
+		let hunk = model.hunks[model.hunk]
+		let step = model.steps[hunk.change]
+		VStack(alignment: .leading, spacing: 6) {
+			HStack(spacing: 7) {
+				Image(systemName: hunk.mark).font(.system(size: 12)).foregroundStyle(hunk.tint)
+				Text(hunk.label).font(.system(size: 13, weight: .bold)).monospacedDigit()
+				Text("\(model.hunk + 1) of \(model.hunks.count)").font(.system(size: 11)).monospacedDigit().foregroundStyle(Ink.dim)
+				Text(step.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+				Text(model.short(step.path) + ":\(hunk.line)" + (hunk.end > hunk.line ? "-\(hunk.end)" : "")).font(.system(size: 11)).foregroundStyle(Ink.dim).lineLimit(1).truncationMode(.head)
+					.textSelection(.enabled)
+				Spacer(minLength: 6)
+				Counts(added: step.added, removed: step.removed)
+				Text(model.phase + (model.round > 1 ? " · round \(model.round)" : "") + " · \(model.decided)/\(model.hunks.count)").font(.system(size: 10, weight: .semibold)).monospacedDigit().foregroundStyle(Ink.dim)
+					.padding(.horizontal, 7).padding(.vertical, 1).background(Capsule().fill(Ink.hover))
+			}
+			if !step.why.isEmpty || !step.notes.isEmpty || !model.remarks.isEmpty {
+				ScrollView {
+					VStack(alignment: .leading, spacing: 4) {
+						if !step.why.isEmpty {
+							Markdown(text: step.why, base: model.folder).foregroundStyle(Ink.fg.opacity(0.85))
+						}
+						ForEach(step.notes) { Remark(note: $0, base: model.folder) }
+						ForEach(model.remarks) { Remark(note: $0, base: model.folder) }
+					}
+					.frame(maxWidth: .infinity, alignment: .leading)
+				}
+				.scrollIndicators(.never)
+				.frame(maxHeight: 120)
+				.fixedSize(horizontal: false, vertical: true)
+			}
+			VStack(spacing: 4) {
+				TextField("Comment on \(hunk.label), it goes with accept or reject", text: $model.draft, axis: .vertical)
+					.textFieldStyle(.plain).font(.system(size: 13)).lineLimit(1...(model.deep > 0 ? max(6, Int((model.deep - 160) / 17)) : 6))
+					.padding(.horizontal, 4).padding(.top, 4)
+					.frame(maxHeight: model.deep > 0 ? .infinity : nil, alignment: .topLeading)
+				HStack(spacing: 2) {
+					Icon(name: "chevron.up", size: 15, tip: "Previous change, ⌥⌘[") { model.walk(false) }
+					Icon(name: "chevron.down", size: 15, tip: "Next change, ⌥⌘]") { model.walk(true) }
+					Spacer(minLength: 6)
+					Verdict(accept: false, on: hunk.status == "rejected", small: true, tip: "Reject \(hunk.label) with the comment, ⌥⌘N") { model.judge(model.hunk, "rejected") }
+					Verdict(accept: true, on: hunk.status == "accepted", small: true, tip: "Accept \(hunk.label) with the comment, ⌥⌘Y") { model.judge(model.hunk, "accepted") }
+				}
+			}
+			.frame(maxHeight: model.deep > 0 ? .infinity : nil)
+			.padding(8)
+			.background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+			.overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Ink.accent.opacity(0.35), lineWidth: 1))
+		}
+		.foregroundStyle(Ink.fg)
+		.padding(10)
+		.frame(maxWidth: .infinity, maxHeight: model.deep > 0 ? .infinity : nil, alignment: .topLeading)
+		.frame(height: model.deep > 0 ? model.deep : nil)
+		.background(GeometryReader { box in
+			Color.clear.onAppear { model.depth = box.size.height }.onChange(of: box.size.height) { _, tall in model.depth = tall }
+		})
+		.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+		.overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Ink.line, lineWidth: 1))
+		.environment(\.openURL, OpenURLAction { model.follow($0) })
+		.overlay(alignment: .top) {
+			Color.clear.frame(height: 7)
+				.contentShape(Rectangle())
+				.onHover { $0 ? NSCursor.resizeUpDown.push() : NSCursor.pop() }
+				.gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global).onChanged { drag in
+					model.deep = min(900, max(110, (model.deep > 0 ? model.deep : model.depth) - drag.translation.height + model.dragged))
+					model.dragged = drag.translation.height
+					UserDefaults.standard.set(model.deep, forKey: "deep")
+				}.onEnded { _ in model.dragged = 0 })
+				.onTapGesture(count: 2) {
+					model.deep = 0
+					UserDefaults.standard.set(0, forKey: "deep")
+				}
+				.tip("Drag to resize the review panel, double click to fit it")
+		}
+	}
+}
+
 struct Palette: View {
 	@ObservedObject var model: Model
 	@FocusState private var focus: Bool
@@ -1462,7 +1752,7 @@ struct Palette: View {
 			}
 			HStack(spacing: 8) {
 				Image(systemName: model.palette == "answer" ? "arrowshape.turn.up.left" : model.palette == "comment" ? "text.bubble" : model.palette == "line" ? "number" : "magnifyingglass").font(.system(size: 13)).foregroundStyle(Ink.dim)
-			TextField(model.palette == "line" ? "Go to line" : model.palette == "answer" ? "Answer the agent" : model.palette == "comment" ? "Comment to the agent on this spot" : model.palette == "recent" ? "Recent files" : model.palette == "search" ? "Search actions, files and text" : "Go to file, or type / or ~ to browse", text: $model.query)
+			TextField(model.palette == "line" ? "Go to line" : model.palette == "answer" ? "Answer the agent" : model.palette == "comment" ? (model.step >= 0 ? "Comment on this change, it goes with accept or reject" : "Comment to the agent on this spot") : model.palette == "recent" ? "Recent files" : model.palette == "search" ? "Search actions, files and text" : "Go to file, or type / or ~ to browse", text: $model.query)
 				.textFieldStyle(.plain).font(.system(size: 14)).padding(.vertical, 10)
 				.focused($focus)
 				.onSubmit { model.pick() }
@@ -1644,7 +1934,7 @@ struct Project: View {
 		HStack(spacing: 7) {
 			Mark(model: model, path: path, on: on)
 			VStack(alignment: .leading, spacing: 0) {
-				Text((path as NSString).lastPathComponent).font(.system(size: 12 * model.scale, weight: .semibold)).lineLimit(1)
+				Text(model.label(path)).font(.system(size: 12 * model.scale, weight: .semibold)).lineLimit(1)
 				if on {
 					Trail(model: model)
 				} else {
@@ -1692,21 +1982,80 @@ struct Shell: View {
 			HStack(spacing: 6) {
 				Mark(model: model, path: model.root, on: true)
 				VStack(alignment: .leading, spacing: 0) {
-					Text((model.root as NSString).lastPathComponent).font(.system(size: 12 * model.scale, weight: .semibold)).lineLimit(1).truncationMode(.head).tip(model.root)
+					Text(model.label(model.root)).font(.system(size: 12 * model.scale, weight: .semibold)).lineLimit(1).truncationMode(.head).tip(model.root)
 						.contextMenu { Ops(model: model, path: model.root, dir: true, top: true) }
 					Trail(model: model)
 				}
 				Spacer(minLength: 0)
 				More(model: model, path: model.root, dir: true, top: true)
 			}
+			.padding(.trailing, 6)
 			ScrollView {
 				LazyVStack(spacing: 1) {
 					ForEach(model.rows(model.root, 0)) { Row(model: model, node: $0) }
 				}
+				.background(Thin())
 			}
-			.scrollIndicators(.never)
+			.scrollIndicators(.visible)
 		}
-		.padding(EdgeInsets(top: 6, leading: 6, bottom: 0, trailing: 6))
+		.padding(EdgeInsets(top: 6, leading: 6, bottom: 0, trailing: 0))
+	}
+
+	var review: some View {
+		VStack(alignment: .leading, spacing: 4) {
+			HStack(spacing: 4) {
+				Image(systemName: "checklist").font(.system(size: 10 * model.scale)).foregroundStyle(Ink.accent)
+				Text("REVIEW").font(.system(size: 10 * model.scale)).tracking(0.6).foregroundStyle(Ink.dim)
+				Text("\(model.decided)/\(model.hunks.count)").font(.system(size: 10 * model.scale)).monospacedDigit().foregroundStyle(Ink.dim)
+				Spacer(minLength: 0)
+				Act(name: "arrow.up.forward.square", tip: "Open the review, ⇧⌘R") { model.resume() }
+			}
+			.padding(.horizontal, 4)
+			Text(model.heading).font(.system(size: 12 * model.scale, weight: .semibold)).lineLimit(2).padding(.horizontal, 4)
+			let accepted = model.steps.filter { $0.status == "accepted" }.count
+			let rejected = model.steps.filter { $0.status == "rejected" }.count
+			let notes = model.steps.reduce(0) { $0 + $1.notes.count } + model.remarks.count
+			HStack(spacing: 6) {
+				Text(model.phase + (model.round > 1 ? " \(model.round)" : ""))
+				Counts(added: model.steps.reduce(0) { $0 + $1.added }, removed: model.steps.reduce(0) { $0 + $1.removed })
+				Text("\(accepted)").foregroundStyle(Color(red: 0.42, green: 0.78, blue: 0.56))
+				Text("\(rejected)").foregroundStyle(Color(red: 1, green: 0.49, blue: 0.43))
+				Text("\(model.steps.count - accepted - rejected) pending")
+				if notes > 0 {
+					Label("\(notes)", systemImage: "text.bubble").labelStyle(.titleAndIcon).foregroundStyle(Ink.accent)
+				}
+			}
+			.font(.system(size: 10 * model.scale)).monospacedDigit().foregroundStyle(Ink.dim).lineLimit(1).padding(.horizontal, 4)
+			.tip("\(model.steps.count) changes in \(Set(model.steps.map { $0.path }).count) files, \(accepted) accepted, \(rejected) rejected, \(notes) comments")
+			if !model.remarks.isEmpty {
+				Label("\(model.remarks.count) on the plan", systemImage: model.remarks.contains { $0.question } ? "questionmark.bubble" : "text.bubble").labelStyle(.titleAndIcon)
+					.font(.system(size: 11 * model.scale)).foregroundStyle(Ink.accent).padding(.horizontal, 4)
+					.tip(model.remarks.map { ($0.question ? "? " : "") + $0.text }.joined(separator: "\n"))
+			}
+			ForEach(Array(model.steps.enumerated()), id: \.element.id) { at, step in
+				HStack(spacing: 5) {
+					Image(systemName: step.mark).font(.system(size: 10 * model.scale)).foregroundStyle(step.tint)
+					Text("\(at + 1)").monospacedDigit().foregroundStyle(Ink.dim)
+					Text(step.title).foregroundStyle(at == model.step ? Ink.fg : Ink.dim).lineLimit(1).truncationMode(.tail)
+					Spacer(minLength: 2)
+					if !step.notes.isEmpty {
+						Label("\(step.notes.count)", systemImage: step.notes.contains { $0.question } ? "questionmark.bubble" : "text.bubble").labelStyle(.titleAndIcon).font(.system(size: 10 * model.scale)).foregroundStyle(Ink.accent)
+					}
+					Counts(added: step.added, removed: step.removed)
+				}
+				.font(.system(size: 12 * model.scale))
+				.padding(.horizontal, 4).padding(.vertical, 2)
+				.background(RoundedRectangle(cornerRadius: 6).fill(at == model.step ? Ink.hover : Color.clear))
+				.contentShape(Rectangle())
+				.onTapGesture { model.visit(at) }
+				.tip(model.short(step.path) + (step.why.isEmpty ? "" : " · " + step.why))
+				.contextMenu {
+					Button("Copy Path") { copy(step.path) }
+					Button("Copy Proposed Path") { copy(step.proposed) }
+				}
+			}
+		}
+		.padding(6)
 	}
 
 	var agents: some View {
@@ -1758,8 +2107,10 @@ struct Shell: View {
 		VStack(spacing: 0) {
 			HStack(spacing: 6) {
 				Spacer().frame(width: 70)
-				Icon(name: "sidebar.left", on: model.side, tip: "Files, ⌘1") { withAnimation(.easeOut(duration: 0.2)) { model.side.toggle() } }
-				Text(model.file.isEmpty ? "slycbar editor" : (model.file as NSString).lastPathComponent).font(.system(size: 13, weight: .semibold))
+				Icon(name: "sidebar.left", tip: "Files, ⌘1") { withAnimation(.easeOut(duration: 0.2)) { model.side.toggle() } }
+				Icon(name: "chevron.left", tip: "Back, ⌘[") { model.back() }
+				Icon(name: "chevron.right", tip: "Forward, ⌘]") { model.forward() }
+				Text(model.file.isEmpty ? "Slyed" : (model.file as NSString).lastPathComponent).font(.system(size: 13, weight: .semibold))
 				if model.dirty.contains(model.file) {
 					Circle().fill(Ink.dim).frame(width: 6, height: 6)
 				}
@@ -1790,6 +2141,12 @@ struct Shell: View {
 					Icon(name: "chevron.left.forwardslash.chevron.right", on: model.mode == "code", tip: "Code") { model.show("code") }
 					Icon(name: "rectangle.split.2x1", on: model.mode == "both", tip: "Code and preview") { model.show("both") }
 					Icon(name: "eye", on: model.mode == "preview", tip: "Preview") { model.show("preview") }
+				}
+				if !model.comparing.isEmpty {
+					Text(model.comparing + (model.region.isEmpty ? "" : " · " + model.region)).font(.system(size: 11)).foregroundStyle(Ink.dim).lineLimit(1).truncationMode(.middle)
+					Icon(name: "chevron.up", tip: "Previous changed region") { model.walk(false) }
+					Icon(name: "chevron.down", tip: "Next changed region") { model.walk(true) }
+					Icon(name: "xmark", tip: "Close the comparison") { model.leave() }
 				}
 				if !model.proposal.isEmpty {
 					Text("Claude Code proposes a change to " + model.proposal).font(.system(size: 11)).foregroundStyle(Ink.dim).lineLimit(1).truncationMode(.middle)
@@ -1822,6 +2179,17 @@ struct Shell: View {
 									.padding(.bottom, 4)
 							}
 						}
+						if !model.plan.isEmpty {
+							ScrollView {
+								review.fixedSize(horizontal: false, vertical: true).background(Thin())
+							}
+							.scrollIndicators(.visible)
+							.frame(maxHeight: 300)
+							.fixedSize(horizontal: false, vertical: true)
+							.background(RoundedRectangle(cornerRadius: 9).fill(Ink.accent.opacity(0.1)))
+							.overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Ink.accent.opacity(0.45), lineWidth: 1))
+							.padding(.bottom, 4)
+						}
 						if !model.agents.isEmpty {
 							Color.clear.frame(height: 4)
 								.contentShape(Rectangle())
@@ -1841,8 +2209,9 @@ struct Shell: View {
 									.background(GeometryReader { box in
 										Color.clear.onAppear { model.fit(box.size.height) }.onChange(of: box.size.height) { _, tall in model.fit(tall) }
 									})
+									.background(Thin())
 							}
-							.scrollIndicators(.never)
+							.scrollIndicators(.visible)
 							.frame(height: model.high > 0 ? min(model.high, model.fitted) : model.fitted)
 							.background(RoundedRectangle(cornerRadius: 9).fill(Color(red: 0.282, green: 0.463, blue: 0.839).opacity(0.1)))
 							.overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color(red: 0.45, green: 0.6, blue: 0.9).opacity(0.3), lineWidth: 1))
@@ -1871,11 +2240,16 @@ struct Shell: View {
 					.frame(width: 7)
 				}
 				VStack(spacing: 0) {
-					Web(view: web).frame(maxWidth: .infinity)
-						.clipShape(RoundedRectangle(cornerRadius: 10))
-						.overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Ink.line, lineWidth: 1))
-						.shadow(color: .black.opacity(0.4), radius: 9, y: 2)
-						.padding(EdgeInsets(top: 6, leading: model.side ? 0 : 6, bottom: 2, trailing: 6))
+					VStack(spacing: 6) {
+						Web(view: web).frame(maxWidth: .infinity, maxHeight: .infinity)
+							.clipShape(RoundedRectangle(cornerRadius: 10))
+							.overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Ink.line, lineWidth: 1))
+							.shadow(color: .black.opacity(0.4), radius: 9, y: 2)
+						if model.reviewing {
+							Feedback(model: model)
+						}
+					}
+					.padding(EdgeInsets(top: 6, leading: model.side ? 0 : 6, bottom: 2, trailing: 6))
 					HStack(spacing: 10) {
 						if !model.status.isEmpty {
 							Label(model.status, systemImage: "info.circle").labelStyle(.titleAndIcon).font(.system(size: 11, weight: .medium)).lineLimit(1)
@@ -1915,24 +2289,24 @@ struct Shell: View {
 		}
 		.foregroundStyle(Ink.fg)
 		.background(Color(red: 0.031, green: 0.039, blue: 0.071).opacity(0.34))
-		.overlay { Bubble() }
 		.overlay(alignment: .top) {
 			ZStack(alignment: .top) {
 			if model.gitOpen {
 				ZStack(alignment: .top) {
 					Color.black.opacity(0.25).contentShape(Rectangle()).onTapGesture { model.gitOpen = false }
-					GitPanel(model: model).padding(.top, 60).transition(.scale(scale: 0.95, anchor: .top).combined(with: .opacity))
+					GitPanel(model: model).movable().padding(.top, 60).transition(.scale(scale: 0.95, anchor: .top).combined(with: .opacity))
 				}
 			}
 			if !model.palette.isEmpty {
 				ZStack(alignment: .top) {
 					Color.black.opacity(0.2).contentShape(Rectangle()).onTapGesture { model.close() }
-					Palette(model: model).padding(.top, 70).transition(.scale(scale: 0.92, anchor: .top).combined(with: .opacity).combined(with: .offset(y: -14)))
+					Palette(model: model).movable().padding(.top, 70).transition(.scale(scale: 0.92, anchor: .top).combined(with: .opacity).combined(with: .offset(y: -14)))
 				}
 			}
 			}
 			.animation(.spring(response: 0.32, dampingFraction: 0.78), value: model.palette.isEmpty)
 		}
+		.overlay { Bubble() }
 		.ignoresSafeArea()
 		.preferredColorScheme(.dark)
 	}
@@ -2038,7 +2412,7 @@ final class Ide {
 		let dir = (ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"] ?? NSHomeDirectory() + "/.claude") + "/ide"
 		try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
 		lock = dir + "/\(port).lock"
-		let body: [String: Any] = ["pid": Int(ProcessInfo.processInfo.processIdentifier), "workspaceFolders": workspaceFolders(), "ideName": "slycbar editor", "transport": "ws", "runningInWindows": false, "authToken": authToken]
+		let body: [String: Any] = ["pid": Int(ProcessInfo.processInfo.processIdentifier), "workspaceFolders": workspaceFolders(), "ideName": "Slyed", "transport": "ws", "runningInWindows": false, "authToken": authToken]
 		guard let data = try? JSONSerialization.data(withJSONObject: body) else { return }
 		try? FileManager.default.removeItem(atPath: lock + ".next")
 		guard FileManager.default.createFile(atPath: lock + ".next", contents: data, attributes: [.posixPermissions: 0o600]) else { return }
@@ -2107,7 +2481,7 @@ final class Ide {
 		switch method {
 		case "initialize":
 			let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
-			send(["id": id, "result": ["protocolVersion": params["protocolVersion"] as? String ?? "2025-03-26", "capabilities": ["tools": [:] as [String: Any]], "serverInfo": ["name": "slycbar editor", "version": version]] as [String: Any]], connection)
+			send(["id": id, "result": ["protocolVersion": params["protocolVersion"] as? String ?? "2025-03-26", "capabilities": ["tools": [:] as [String: Any]], "serverInfo": ["name": "Slyed", "version": version]] as [String: Any]], connection)
 		case "ping":
 			send(["id": id, "result": [:] as [String: Any]], connection)
 		case "tools/list":
@@ -2129,6 +2503,9 @@ final class Ide {
 final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMessageHandlerWithReply {
 	let model = Model()
 	let servers = Servers()
+	let bar = tray.Host(script: Bundle.main.object(forInfoDictionaryKey: "SlycbarCli") as? String ?? "", dir: (cache as NSString).deletingLastPathComponent + "/tray", show: CommandLine.arguments.contains("show"))
+	var quiet = false
+	var ending = false
 	var win: NSWindow!
 	var web: WKWebView!
 	var ready = false
@@ -2152,6 +2529,447 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 	var diagnostics: [String: [[String: Any]]] = [:]
 	var spotted = ""
 	var folders: AnyCancellable?
+	var body: [String: Any] = [:]
+	var stamped = Date.distantPast
+	var firstPlan = ""
+	var firstPair: (String, String)?
+	var drawn = false
+
+	func stamp(_ path: String) -> Date {
+		(try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date) ?? .distantPast
+	}
+
+	func load(plan path: String) {
+		guard let data = FileManager.default.contents(atPath: path), let read = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+			model.status = "the plan at " + model.short(path) + " is not readable json"
+			return
+		}
+		let fresh = model.plan != path
+		let kept = fresh ? [] : model.steps
+		let held = fresh ? -1 : model.hunk
+		body = read
+		stamped = stamp(path)
+		let parse = { (c: [String: Any], n: Int) -> Note in
+			let line = c["line"] as? Int ?? 0
+			return Note(id: n, side: c["side"] as? String ?? (line > 0 ? "proposed" : "change"), line: line, end: c["end"] as? Int ?? line, text: c["text"] as? String ?? "",
+				question: c["question"] as? Bool ?? false, answer: c["answer"] as? String ?? "", change: (c["change"] as? Int ?? 0) - 1, sent: c["sent"] as? Bool ?? false, status: c["status"] as? String ?? "")
+		}
+		let steps = (read["changes"] as? [[String: Any]] ?? []).enumerated().map { at, change -> Step in
+			let notes = (change["comments"] as? [[String: Any]] ?? []).enumerated().map { parse($1, $0) }
+			let target = change["path"] as? String ?? ""
+			var step = Step(id: at, title: change["title"] as? String ?? (target as NSString).lastPathComponent, why: change["why"] as? String ?? "", path: target,
+				proposed: change["proposed"] as? String ?? "", base: change["base"] as? String ?? "", status: change["status"] as? String ?? "pending", notes: notes)
+			if at < kept.count, kept[at].path == step.path, kept[at].proposed == step.proposed {
+				step.added = kept[at].added
+				step.removed = kept[at].removed
+			}
+			return step
+		}
+		model.plan = path
+		model.heading = read["title"] as? String ?? (path as NSString).lastPathComponent
+		model.steps = steps
+		model.remarks = (read["comments"] as? [[String: Any]] ?? []).enumerated().map { n, c in
+			let note = parse(c, n)
+			return Note(id: n, side: "plan", line: 0, end: 0, text: note.text, question: note.question, answer: note.answer, change: note.change, sent: note.sent)
+		}
+		model.phase = read["state"] as? String ?? "open"
+		model.round = read["round"] as? Int ?? 1
+		model.folder = read["dir"] as? String ?? ""
+		model.side = true
+		if fresh {
+			model.step = -1
+			model.hunk = -1
+			model.hunks = []
+		}
+		DispatchQueue.global().async {
+			var found = self.split(steps)
+			DispatchQueue.main.async {
+				guard self.model.plan == path, self.model.steps.count == steps.count else { return }
+				for at in found.indices {
+					let hunk = found[at]
+					if let n = self.model.steps[hunk.change].notes.firstIndex(where: { !$0.status.isEmpty && $0.side == hunk.side && $0.line == hunk.line && $0.end == hunk.end }) {
+						let note = self.model.steps[hunk.change].notes.remove(at: n)
+						found[at].status = note.status
+						found[at].text = note.text
+						found[at].sent = note.sent
+					}
+					let added = hunk.rows.filter { $0["t"] as? String == "+" }.count
+					let removed = hunk.rows.filter { $0["t"] as? String == "-" }.count
+					self.model.steps[hunk.change].added = (hunk.part == 1 ? 0 : self.model.steps[hunk.change].added) + added
+					self.model.steps[hunk.change].removed = (hunk.part == 1 ? 0 : self.model.steps[hunk.change].removed) + removed
+				}
+				self.model.hunks = found
+				self.drawn = false
+				guard !found.isEmpty else {
+					self.model.status = "the plan changes nothing against the files on disk"
+					return
+				}
+				if fresh {
+					self.seek(found.firstIndex { $0.status == "pending" } ?? 0, record: false)
+				} else if held >= 0 {
+					self.seek(min(held, found.count - 1), record: false)
+				}
+			}
+		}
+	}
+
+	func split(_ steps: [Step]) -> [Hunk] {
+		let fm = FileManager.default
+		var found: [Hunk] = []
+		for (change, step) in steps.enumerated() {
+			let left = !step.base.isEmpty ? step.base : fm.fileExists(atPath: step.path) ? step.path : "/dev/null"
+			let out = String(decoding: call("/usr/bin/git", ["diff", "--no-index", "--no-color", "-U3", "--", left, step.proposed]).out, as: UTF8.self)
+			var old = 0
+			var new = 0
+			var rows: [[String: Any]] = []
+			var part = 0
+			let close = {
+				var runs: [(Int, Int)] = []
+				for (at, row) in rows.enumerated() where row["t"] as? String != " " {
+					if let last = runs.last, last.1 == at - 1 {
+						runs[runs.count - 1].1 = at
+					} else {
+						runs.append((at, at))
+					}
+				}
+				for (n, run) in runs.enumerated() {
+					let before = n == 0 ? 0 : runs[n - 1].1 + 1 + min(3, run.0 - runs[n - 1].1 - 1)
+					let after = n == runs.count - 1 ? rows.count - 1 : run.1 + min(3, runs[n + 1].0 - run.1 - 1)
+					let own = Array(rows[run.0...run.1])
+					let plus = own.filter { $0["t"] as? String == "+" }.compactMap { $0["b"] as? Int }
+					let minus = own.filter { $0["t"] as? String == "-" }.compactMap { $0["a"] as? Int }
+					let lines = plus.isEmpty ? minus : plus
+					part += 1
+					found.append(Hunk(id: found.count, change: change, part: part, side: plus.isEmpty ? "base" : "proposed", line: lines.first ?? 1, end: lines.last ?? 1, rows: Array(rows[before...after])))
+				}
+				rows = []
+			}
+			for line in out.split(separator: "\n", omittingEmptySubsequences: false) {
+				if line.hasPrefix("@@") {
+					close()
+					let parts = line.split(separator: " ")
+					guard parts.count > 2 else { continue }
+					old = Int(parts[1].dropFirst().split(separator: ",").first ?? "") ?? 0
+					new = Int(parts[2].dropFirst().split(separator: ",").first ?? "") ?? 0
+					continue
+				}
+				guard old + new > 0 || !rows.isEmpty, let mark = line.first, mark == " " || mark == "+" || mark == "-" else { continue }
+				let text = String(line.dropFirst())
+				if mark == " " {
+					rows.append(["t": " ", "a": old, "b": new, "s": text])
+					old += 1
+					new += 1
+				} else if mark == "+" {
+					rows.append(["t": "+", "a": 0, "b": new, "s": text])
+					new += 1
+				} else {
+					rows.append(["t": "-", "a": old, "b": 0, "s": text])
+					old += 1
+				}
+			}
+			close()
+		}
+		return found
+	}
+
+	func tree(_ at: Int) -> [String: Any] {
+		["at": at, "files": model.steps.enumerated().map { n, step -> [String: Any] in
+			["n": n + 1, "name": (step.path as NSString).lastPathComponent, "path": model.short(step.path), "title": step.title, "why": step.why, "added": step.added, "removed": step.removed,
+				"hunks": model.hunks.filter { $0.change == n }.map { ["id": $0.id, "label": $0.label, "status": $0.status, "text": $0.text, "rows": $0.rows] as [String: Any] }]
+		}]
+	}
+
+	func anchor(_ path: String) {
+		var dir = (path as NSString).deletingLastPathComponent
+		while dir.count > 1, !FileManager.default.fileExists(atPath: dir) {
+			dir = (dir as NSString).deletingLastPathComponent
+		}
+		model.stepping = true
+		if let held = model.roots.filter({ path.hasPrefix($0 + "/") }).max(by: { $0.count < $1.count }) {
+			model.root = held
+		} else {
+			let found = git(dir, ["rev-parse", "--show-toplevel"])
+			let project = found.code == 0 ? String(decoding: found.out, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) : dir
+			model.adopt(project.isEmpty ? dir : project)
+		}
+		model.stepping = false
+		var at = dir
+		while at.count > model.root.count {
+			model.open.insert(at)
+			at = (at as NSString).deletingLastPathComponent
+		}
+	}
+
+	func here(_ root: String) -> String {
+		root + "\t" + (model.reviewing ? "\t\(model.hunk)" : model.file)
+	}
+
+	func record(_ place: String) {
+		guard place != "\t", place != past.last else { return }
+		past.append(place)
+		ahead = []
+	}
+
+	func go(_ place: String) {
+		let parts = place.components(separatedBy: "\t")
+		if !parts[0].isEmpty, parts[0] != model.root {
+			model.stepping = true
+			if model.roots.contains(parts[0]) {
+				model.root = parts[0]
+			} else {
+				model.roots = model.roots.map { $0 == model.root ? parts[0] : $0 }
+				model.adopt(parts[0])
+			}
+			model.stepping = false
+		}
+		if parts.count > 2, let at = Int(parts[2]), at < model.hunks.count {
+			seek(at, record: false)
+		} else if parts.count > 1, !parts[1].isEmpty, parts[1] != model.file || model.step >= 0 || !model.comparing.isEmpty {
+			show(parts[1], record: false)
+		} else {
+			refresh()
+		}
+	}
+
+	func seek(_ at: Int, record: Bool = true) {
+		guard at >= 0, at < model.hunks.count else { return }
+		guard model.proposal.isEmpty else {
+			model.status = "answer the open Claude Code proposal first"
+			return
+		}
+		let step = model.steps[model.hunks[at].change]
+		let draw = {
+			if record, at != self.model.hunk {
+				self.record(self.here(self.model.root))
+			}
+			self.displayed = false
+			self.model.file = step.path
+			self.model.tracked = false
+			self.model.diff = false
+			self.model.sides = false
+			self.model.preview = false
+			self.model.comparing = ""
+			self.model.region = ""
+			self.win.title = self.model.hunks[at].label + " " + step.title
+			self.anchor(step.path)
+			self.model.hunk = at
+			self.model.step = self.model.hunks[at].change
+			self.model.draft = self.model.hunks[at].text
+			if self.drawn {
+				self.page("return window.slyc.hunk(at, marks)", ["at": at, "marks": self.model.hunks.map { ["status": $0.status, "text": $0.text] }])
+			} else {
+				self.drawn = true
+				self.page("return window.slyc.review(doc)", ["doc": self.tree(at)])
+			}
+			self.refresh()
+		}
+		if model.dirty.contains(model.file), model.step < 0, model.comparing.isEmpty {
+			let old = model.file
+			page("return window.slyc.text()", [:]) { text in
+				if let text = text as? String {
+					self.drafts[old] = text
+				}
+				draw()
+			}
+		} else {
+			draw()
+		}
+	}
+
+	func judge(_ at: Int, _ status: String) {
+		guard at >= 0, at < model.hunks.count else { return }
+		let text = at == model.hunk ? model.draft.trimmingCharacters(in: .whitespacesAndNewlines) : model.hunks[at].text
+		model.hunks[at].status = model.hunks[at].status == status && model.hunks[at].text == text ? "pending" : status
+		model.hunks[at].text = text
+		model.hunks[at].sent = false
+		let change = model.hunks[at].change
+		let marks = model.hunks.filter { $0.change == change }.map { $0.status }
+		model.steps[change].status = marks.contains("rejected") ? "rejected" : marks.allSatisfy { $0 == "accepted" } ? "accepted" : "pending"
+		persist()
+		guard model.hunks.contains(where: { $0.status == "pending" }) else {
+			finish()
+			return
+		}
+		if at == model.hunk, model.hunks[at].status != "pending", let next = model.hunks.indices.first(where: { $0 > at && model.hunks[$0].status == "pending" }) ?? model.hunks.firstIndex(where: { $0.status == "pending" }) {
+			seek(next)
+		} else {
+			page("return window.slyc.hunk(at, marks)", ["at": model.hunk, "marks": model.hunks.map { ["status": $0.status, "text": $0.text] }])
+		}
+	}
+
+	func walk(_ forward: Bool) {
+		if !model.comparing.isEmpty {
+			page("return window.slyc.region(t)", ["t": forward ? "next" : "prev"]) { result in
+				if (result as? [String: Any])?["done"] as? Bool ?? true {
+					self.model.status = forward ? "no later difference" : "no earlier difference"
+				}
+			}
+			return
+		}
+		guard !model.hunks.isEmpty else { return }
+		let next = model.hunk < 0 ? (forward ? 0 : model.hunks.count - 1) : model.hunk + (forward ? 1 : -1)
+		guard next >= 0, next < model.hunks.count else {
+			model.status = forward ? "this is the last change" : "this is the first change"
+			return
+		}
+		seek(next)
+	}
+
+	func resume() {
+		guard !model.plan.isEmpty else {
+			model.status = "no review is open, an agent opens one with slybar review"
+			return
+		}
+		seek(model.hunk >= 0 ? model.hunk : model.hunks.firstIndex { $0.status == "pending" } ?? 0)
+	}
+
+	func finish() {
+		let approved = model.hunks.allSatisfy { $0.status == "accepted" }
+		for at in model.hunks.indices {
+			model.hunks[at].sent = true
+		}
+		for at in model.remarks.indices {
+			model.remarks[at].sent = true
+		}
+		for at in model.steps.indices {
+			for n in model.steps[at].notes.indices {
+				model.steps[at].notes[n].sent = true
+			}
+		}
+		let state = approved ? "approved" : "sent"
+		let stamp = ISO8601DateFormatter().string(from: Date())
+		persist {
+			$0["state"] = state
+			$0["sent"] = stamp
+		}
+		note("comments.log", "review " + state + " " + model.plan)
+		leave()
+		model.status = approved ? "every change is accepted, the review is back with Claude Code" : "the review is back with Claude Code"
+	}
+
+	func recheck() {
+		guard !model.plan.isEmpty, stamp(model.plan) > stamped else { return }
+		load(plan: model.plan)
+		model.status = "the plan changed on disk and was read again"
+	}
+
+	func persist(_ also: (inout [String: Any]) -> Void = { _ in }) {
+		guard !model.plan.isEmpty else { return }
+		if stamp(model.plan) > stamped, let data = FileManager.default.contents(atPath: model.plan), let read = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+			body = read
+		}
+		let entry = { (note: Note) -> [String: Any] in
+			var item: [String: Any] = ["text": note.text]
+			if note.side != "plan" {
+				item["side"] = note.side
+			}
+			if note.side == "base" || note.side == "proposed" {
+				item["line"] = note.line
+				item["end"] = note.end
+			}
+			if note.question {
+				item["question"] = true
+			}
+			if !note.answer.isEmpty {
+				item["answer"] = note.answer
+			}
+			if note.change >= 0 {
+				item["change"] = note.change + 1
+			}
+			if note.sent {
+				item["sent"] = true
+			}
+			if !note.status.isEmpty {
+				item["status"] = note.status
+			}
+			return item
+		}
+		var raw = body["changes"] as? [[String: Any]] ?? []
+		for step in model.steps where step.id < raw.count {
+			raw[step.id]["status"] = step.status
+			raw[step.id]["comments"] = step.notes.map(entry) + model.hunks.filter { $0.change == step.id && $0.status != "pending" }.map { entry(Note(id: $0.id, side: $0.side, line: $0.line, end: $0.end, text: $0.text, sent: $0.sent, status: $0.status)) }
+		}
+		body["changes"] = raw
+		body["comments"] = model.remarks.map(entry)
+		also(&body)
+		guard let data = try? JSONSerialization.data(withJSONObject: body, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) else { return }
+		do {
+			try data.write(to: URL(fileURLWithPath: model.plan), options: .atomic)
+		} catch {
+			model.status = "the plan was not saved: " + error.localizedDescription
+			return
+		}
+		stamped = stamp(model.plan)
+	}
+
+	func pair(_ path: String, _ left: String, _ right: String, _ title: String, _ target: String) {
+		let load = {
+			self.displayed = false
+			self.model.file = path
+			self.model.tracked = false
+			self.model.diff = false
+			self.model.sides = true
+			self.win.title = title
+			self.page("return window.slyc.show(doc)", ["doc": ["path": path, "name": (path as NSString).lastPathComponent, "text": right, "original": left, "media": "", "url": "", "locked": true]]) { result in
+				self.model.preview = (result as? [String: Any])?["preview"] as? Bool ?? false
+				self.page("return window.slyc.diff(on, undefined, sides)", ["on": false, "sides": true]) { _ in
+					if !target.isEmpty {
+						self.page("return window.slyc.region(t)", ["t": target])
+					}
+				}
+			}
+		}
+		if model.dirty.contains(model.file), model.step < 0, model.comparing.isEmpty {
+			let old = model.file
+			page("return window.slyc.text()", [:]) { text in
+				if let text = text as? String {
+					self.drafts[old] = text
+				}
+				load()
+			}
+		} else {
+			load()
+		}
+	}
+
+	func compare(_ left: String, _ right: String) {
+		let title = (left as NSString).lastPathComponent + " ↔ " + (right as NSString).lastPathComponent
+		pair(right, decode(left), decode(right), title, "first")
+		model.step = -1
+		model.hunk = -1
+		model.comparing = model.short(left) + " ↔ " + model.short(right)
+		model.region = ""
+	}
+
+	func leave() {
+		let path = model.file
+		let pairing = model.step >= 0 || !model.comparing.isEmpty
+		if model.comparing.isEmpty {
+			model.plan = ""
+			model.heading = ""
+			model.steps = []
+			model.remarks = []
+			model.phase = ""
+			model.round = 1
+			model.folder = ""
+			model.draft = ""
+			model.hunks = []
+			body = [:]
+		}
+		model.step = -1
+		model.hunk = -1
+		model.comparing = ""
+		model.region = ""
+		guard pairing else { return }
+		model.sides = false
+		if FileManager.default.fileExists(atPath: path) {
+			show(path, record: false)
+		} else {
+			model.file = ""
+			model.tracked = false
+			page("return window.slyc.show(doc)", ["doc": ["path": "", "name": ".txt", "text": "", "original": NSNull(), "media": "", "url": ""]])
+		}
+	}
 
 	func decode(_ path: String) -> String {
 		guard let data = FileManager.default.contents(atPath: path) else { return "" }
@@ -2406,27 +3224,23 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 			refresh()
 			return
 		}
+		let was = here(model.root)
+		let moved = model.file != path || model.step >= 0 || !model.comparing.isEmpty
+		if model.step >= 0 || !model.comparing.isEmpty {
+			model.step = -1
+			model.hunk = -1
+			model.comparing = ""
+			model.region = ""
+			model.sides = false
+		}
 		displayed = false
-		if record && !model.file.isEmpty && model.file != path {
-			past.append(model.file)
-			ahead = []
+		if record, moved {
+			self.record(was)
 		}
 		model.recent.removeAll { $0 == path }
 		model.recent.insert(path, at: 0)
 		model.recent = Array(model.recent.prefix(30))
-		let dir = (path as NSString).deletingLastPathComponent
-		if let held = model.roots.filter({ path.hasPrefix($0 + "/") }).max(by: { $0.count < $1.count }) {
-			model.root = held
-		} else {
-			let found = git(dir, ["rev-parse", "--show-toplevel"])
-			let project = found.code == 0 ? String(decoding: found.out, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) : dir
-			model.adopt(project.isEmpty ? dir : project)
-		}
-		var at = dir
-		while at.count > model.root.count {
-			model.open.insert(at)
-			at = (at as NSString).deletingLastPathComponent
-		}
+		anchor(path)
 		let load = {
 			let ext = (path as NSString).pathExtension.lowercased()
 			let media = ["mp4", "mov", "m4v", "webm"].contains(ext) ? "video" : ["mp3", "m4a", "wav", "aac", "flac", "ogg", "aiff"].contains(ext) ? "audio" : ["png", "jpg", "jpeg", "gif", "webp", "heic", "bmp", "tiff", "ico", "icns"].contains(ext) ? "image" : ext == "pdf" ? "pdf" : ""
@@ -2437,7 +3251,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 			self.model.tracked = original != nil
 			self.win.title = (path as NSString).lastPathComponent
 			self.win.representedURL = URL(fileURLWithPath: path)
-			self.page("return window.slyc.show(doc)", ["doc": ["path": path, "name": (path as NSString).lastPathComponent, "text": text, "original": original as Any? ?? NSNull(), "media": media, "url": "slycbar-editor://file" + (path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path)]]) { result in
+			self.page("return window.slyc.show(doc)", ["doc": ["path": path, "name": (path as NSString).lastPathComponent, "text": text, "original": original as Any? ?? NSNull(), "media": media, "url": "slyed://file" + (path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path)]]) { result in
 				let info = result as? [String: Any]
 				self.model.preview = info?["preview"] as? Bool ?? false
 				self.model.mode = info?["mode"] as? String ?? "both"
@@ -2469,6 +3283,10 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 	@objc func save(_ sender: Any?) {
 		let path = model.file
 		guard !path.isEmpty else { return }
+		guard model.step < 0, model.comparing.isEmpty else {
+			model.status = "a review or comparison is read only"
+			return
+		}
 		page("return window.slyc.text()", [:]) { text in
 			guard let text = text as? String else { return }
 			do {
@@ -2504,6 +3322,9 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 		} else {
 			model.zoomed = step == 0 ? 1.2 : min(3, max(0.5, model.zoomed + step * 1.2))
 			web.pageZoom = model.zoomed
+			if model.step >= 0 {
+				page("return window.slyc.loose()", [:])
+			}
 			UserDefaults.standard.set(model.zoomed, forKey: "zoom")
 		}
 	}
@@ -2617,19 +3438,21 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 
 
 	@objc func back(_ sender: Any?) {
-		guard let path = past.popLast() else { return }
-		if !model.file.isEmpty {
-			ahead.append(model.file)
+		guard let place = past.popLast() else {
+			model.status = "nothing earlier"
+			return
 		}
-		show(path, record: false)
+		ahead.append(here(model.root))
+		go(place)
 	}
 
 	@objc func forward(_ sender: Any?) {
-		guard let path = ahead.popLast() else { return }
-		if !model.file.isEmpty {
-			past.append(model.file)
+		guard let place = ahead.popLast() else {
+			model.status = "nothing later"
+			return
 		}
-		show(path, record: false)
+		past.append(here(model.root))
+		go(place)
 	}
 
 	@objc func declaration(_ sender: Any?) {
@@ -2645,8 +3468,8 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 	@objc func cutText(_ sender: Any?) { NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil) }
 	@objc func copyText(_ sender: Any?) { NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil) }
 	@objc func pasteText(_ sender: Any?) { NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil) }
-	@objc func copyPath(_ sender: Any?) { editor.copy(model.file) }
-	@objc func copyRelative(_ sender: Any?) { editor.copy(model.relative(model.file)) }
+	@objc func copyPath(_ sender: Any?) { slyed.copy(model.file) }
+	@objc func copyRelative(_ sender: Any?) { slyed.copy(model.relative(model.file)) }
 	@objc func reveal(_ sender: Any?) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: model.file)]) }
 
 	@objc func copySpot(_ sender: Any?) {
@@ -2655,7 +3478,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 			let spot = result as? [String: Any] ?? [:]
 			let from = spot["line"] as? Int ?? 1
 			let to = spot["end"] as? Int ?? from
-			editor.copy(path + ":\(from)" + (to > from ? "-\(to)" : ""))
+			slyed.copy(path + ":\(from)" + (to > from ? "-\(to)" : ""))
 			self.model.status = "path and line copied"
 		}
 	}
@@ -2745,6 +3568,10 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 	}
 
 	func comment(_ text: String) {
+		if model.reviewing {
+			model.draft = text
+			return
+		}
 		let path = model.file
 		page("return window.slyc.spot()", [:]) { result in
 			let spot = result as? [String: Any] ?? [:]
@@ -2764,12 +3591,12 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 					hunk += line + "\n"
 				}
 			}
-			var message = "Comment from the slycbar editor on \(path):\(from)" + (to > from ? "-\(to)" : "") + ". " + text + "\nCode at that spot:\n" + (spot["text"] as? String ?? "")
+			var message = "Comment from Slyed on \(path):\(from)" + (to > from ? "-\(to)" : "") + ". " + text + "\nCode at that spot:\n" + (spot["text"] as? String ?? "")
 			if !hunk.isEmpty {
 				message += "\nUncommitted change there:\n" + hunk
 			}
 			message += "\nChange only this spot."
-			editor.copy(message)
+			slyed.copy(message)
 			let agent = self.model.agents.first { $0.files.contains(path) } ?? self.model.agents.first { !$0.dir.isEmpty && path.hasPrefix($0.dir + "/") }
 			guard let agent, !agent.socket.isEmpty else {
 				self.model.status = "no agent on this file, comment copied"
@@ -2850,7 +3677,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 				let stamp = logs.map { $0 + ":" + String(((try? fm.attributesOfItem(atPath: $0)[.size]) as? NSNumber)?.intValue ?? 0) }.joined(separator: "|")
 				if let hit = known[pid], hit.0 == stamp {
 					let old = hit.1
-					let agent = Agent(id: pid, name: manifest["name"] as? String ?? (dir as NSString).lastPathComponent, dir: dir, status: manifest["status"] as? String ?? "idle", files: old.files, acts: old.acts, socket: old.socket, last: old.last, questions: old.questions)
+					let agent = Agent(id: pid, name: manifest["name"] as? String ?? (dir as NSString).lastPathComponent, dir: dir, status: manifest["status"] as? String ?? "idle", files: old.files, acts: old.acts, socket: old.socket, last: old.last, questions: old.questions, sid: id)
 					agents.append(agent)
 					fresh[pid] = (stamp, agent)
 					continue
@@ -2911,7 +3738,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 						if files.count >= 6 { break }
 					}
 				}
-				agents.append(Agent(id: pid, name: manifest["name"] as? String ?? (dir as NSString).lastPathComponent, dir: dir, status: manifest["status"] as? String ?? "idle", files: Array(files.prefix(6)), acts: acts, socket: manifest["messagingSocketPath"] as? String ?? "", last: last, questions: open.map { $0.0 + "\t" + $0.1 }))
+				agents.append(Agent(id: pid, name: manifest["name"] as? String ?? (dir as NSString).lastPathComponent, dir: dir, status: manifest["status"] as? String ?? "idle", files: Array(files.prefix(6)), acts: acts, socket: manifest["messagingSocketPath"] as? String ?? "", last: last, questions: open.map { $0.0 + "\t" + $0.1 }, sid: id))
 				if let made = agents.last {
 					fresh[pid] = (stamp, made)
 				}
@@ -2946,7 +3773,15 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 		}
 	}
 
+	@objc func openReview(_ sender: Any?) { resume() }
+	@objc func nextStep(_ sender: Any?) { walk(true) }
+	@objc func previousStep(_ sender: Any?) { walk(false) }
+	@objc func acceptStep(_ sender: Any?) { judge(model.hunk, "accepted") }
+	@objc func rejectStep(_ sender: Any?) { judge(model.hunk, "rejected") }
+	@objc func closeReview(_ sender: Any?) { leave() }
+
 	@objc func flipSides(_ sender: Any?) {
+		guard model.step < 0, model.comparing.isEmpty else { return }
 		model.sides.toggle()
 		if model.sides {
 			model.diff = false
@@ -2955,6 +3790,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 	}
 
 	@objc func flip(_ sender: Any?) {
+		guard model.step < 0, model.comparing.isEmpty else { return }
 		model.diff.toggle()
 		if model.diff {
 			model.sides = false
@@ -2971,6 +3807,26 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 			ready = true
 			first.forEach { show($0) }
 			first = []
+			if !firstPlan.isEmpty {
+				load(plan: firstPlan)
+				firstPlan = ""
+			}
+			if let (left, right) = firstPair {
+				compare(left, right)
+				firstPair = nil
+			}
+			if model.root.isEmpty {
+				model.root = NSHomeDirectory()
+				refresh()
+			}
+			replyHandler(nil, nil)
+		} else if let at = body["hunk"] as? Int {
+			seek(at)
+			replyHandler(nil, nil)
+		} else if let region = body["region"] as? [String: Any] {
+			let at = region["at"] as? Int ?? -1
+			let of = region["of"] as? Int ?? 0
+			model.region = of == 0 ? "no differences" : at < 0 ? "\(of) " + (of == 1 ? "region" : "regions") : "region \(at + 1) of \(of)"
 			replyHandler(nil, nil)
 		} else if let text = body["change"] as? String, let path = body["path"] as? String {
 			model.dirty.insert(path)
@@ -3018,9 +3874,59 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 		}
 	}
 
+	func surface() {
+		guard win != nil else { return }
+		NSApp.setActivationPolicy(.regular)
+		win.makeKeyAndOrderFront(nil)
+		NSApp.activate(ignoringOtherApps: true)
+	}
+
+	func windowWillClose(_ notification: Notification) {
+		NSApp.setActivationPolicy(.accessory)
+	}
+
+	func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+		let why = NSAppleEventManager.shared().currentAppleEvent?.attributeDescriptor(forKeyword: kAEQuitReason)?.enumCodeValue ?? 0
+		if ending || [kAELogOut, kAEReallyLogOut, kAEShowRestartDialog, kAEShowShutdownDialog].contains(why) {
+			return .terminateNow
+		}
+		win?.close()
+		return .terminateCancel
+	}
+
+	func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+		surface()
+		return true
+	}
+
 	func application(_ application: NSApplication, open urls: [URL]) {
-		for url in urls where url.scheme == "slycbar-editor" {
+		for url in urls where url.scheme == "slycbar" {
+			quiet = true
+			if url.host == "reload" {
+				WidgetCenter.shared.reloadAllTimelines()
+			} else {
+				bar.reveal()
+			}
+		}
+		guard urls.contains(where: { $0.scheme != "slycbar" }) else { return }
+		for url in urls where url.scheme == "slyed" {
 			let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+			if url.host == "review", let plan = items.first(where: { $0.name == "plan" })?.value {
+				if ready {
+					load(plan: plan)
+				} else {
+					firstPlan = plan
+				}
+				continue
+			}
+			if url.host == "compare", let left = items.first(where: { $0.name == "a" })?.value, let right = items.first(where: { $0.name == "b" })?.value {
+				if ready {
+					compare(left, right)
+				} else {
+					firstPair = (left, right)
+				}
+				continue
+			}
 			guard let path = items.first(where: { $0.name == "path" })?.value else { continue }
 			pending = items.first(where: { $0.name == "line" })?.value.flatMap { Int($0) }
 			pendingEnd = items.first(where: { $0.name == "end" })?.value.flatMap { Int($0) }
@@ -3036,10 +3942,10 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 		} else {
 			first += paths
 		}
-		win?.makeKeyAndOrderFront(nil)
+		surface()
 	}
 
-	func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+	func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
 	func windowDidBecomeKey(_ notification: Notification) {
 		refresh()
@@ -3064,10 +3970,14 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 			top.submenu = menu
 			main.addItem(top)
 		}
-		add("slycbar editor", [("Hide", #selector(NSApplication.hide(_:)), "h", .command), ("Quit", #selector(NSApplication.terminate(_:)), "q", .command)])
+		add("Slyed", [("Hide", #selector(NSApplication.hide(_:)), "h", .command), ("Quit", #selector(NSApplication.terminate(_:)), "q", .command)])
 		add("File", [("Open…", #selector(pick(_:)), "o", .command), ("Save", #selector(save(_:)), "s", .command), ("-", nil, "", []), ("Close", #selector(NSWindow.performClose(_:)), "w", .command)])
 		add("Edit", [("Undo", Selector(("undo:")), "z", .command), ("Redo", Selector(("redo:")), "z", [.command, .shift]), ("-", nil, "", []), ("Cut", #selector(NSText.cut(_:)), "x", .command), ("Copy", #selector(NSText.copy(_:)), "c", .command), ("Paste", #selector(NSText.paste(_:)), "v", .command), ("Select All", #selector(NSText.selectAll(_:)), "a", .command)])
 		add("Navigate", [("Search Everywhere…", #selector(goSearch(_:)), "k", .command), ("Search Everywhere…", #selector(goSearch(_:)), "k", .control), ("Go to File…", #selector(goFile(_:)), "o", [.command, .shift]), ("Recent Files", #selector(goRecent(_:)), "e", .command), ("Go to Line…", #selector(goLine(_:)), "l", .command), ("-", nil, "", []), ("Back", #selector(back(_:)), "[", .command), ("Forward", #selector(forward(_:)), "]", .command), ("Declaration", #selector(declaration(_:)), "b", .command), ("-", nil, "", []), ("Comment to Agent…", #selector(goComment(_:)), "m", [.command, .shift]), ("Mention to Claude Code", #selector(mention(_:)), "k", [.command, .option])])
+		add("Review", [("Open Review", #selector(openReview(_:)), "r", [.command, .shift]), ("-", nil, "", []),
+			("Next", #selector(nextStep(_:)), "]", [.command, .option]), ("Previous", #selector(previousStep(_:)), "[", [.command, .option]), ("-", nil, "", []),
+			("Accept Change", #selector(acceptStep(_:)), "y", [.command, .option]), ("Reject Change", #selector(rejectStep(_:)), "n", [.command, .option]), ("-", nil, "", []),
+			("Close Review", #selector(closeReview(_:)), "", [])])
 		add("View", [("Files", #selector(side(_:)), "1", .command), ("Git", #selector(gitPanel(_:)), "9", .command), ("Inline Diff", #selector(flip(_:)), "d", [.command, .shift]), ("-", nil, "", []), ("Zoom In", #selector(zoomIn(_:)), "+", .command), ("Zoom In", #selector(zoomIn(_:)), "=", .command), ("Zoom Out", #selector(zoomOut(_:)), "-", .command), ("Actual Size", #selector(zoomReset(_:)), "0", .command), ("Increase Font Size", #selector(zoomIn(_:)), ".", [.control, .shift]), ("Decrease Font Size", #selector(zoomOut(_:)), ",", [.control, .shift]), ("Reset Font Size", #selector(zoomReset(_:)), "0", [.control, .shift])])
 		NSApp.mainMenu = main
 	}
@@ -3075,7 +3985,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 	func applicationDidFinishLaunching(_ notification: Notification) {
 		menu()
 		let config = WKWebViewConfiguration()
-		config.setURLSchemeHandler(Files(), forURLScheme: "slycbar-editor")
+		config.setURLSchemeHandler(Files(), forURLScheme: "slyed")
 		config.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "editor")
 		let view = Page(frame: .zero, configuration: config)
 		view.build = { [unowned self] in self.menu($0) }
@@ -3096,7 +4006,17 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 				self.model.status = "the tray is not running"
 				return
 			}
+			guard CGPreflightScreenCaptureAccess() else {
+				CGRequestScreenCaptureAccess()
+				NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+				self.model.status = "warp waits for Screen Recording to be allowed for Slyed in System Settings"
+				return
+			}
 			let target = self.model.file.isEmpty ? self.model.root : self.model.file
+			guard !self.model.file.isEmpty || !self.top.isEmpty else {
+				self.model.status = "nothing to warp, " + self.model.short(target) + " is in no git repository"
+				return
+			}
 			try? "open \(Int(Date().timeIntervalSince1970))\nchanges \(target)".write(toFile: tray + "/play", atomically: true, encoding: .utf8)
 		}
 		model.compare = { [unowned self] ref in
@@ -3114,7 +4034,9 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 			("Open…", "⌘O", "folder", #selector(pick(_:))), ("Toggle Files Sidebar", "⌘1", "sidebar.left", #selector(side(_:))), ("Inline Diff", "⇧⌘D", "plusminus", #selector(flip(_:))),
 			("Side by Side Diff", "", "square.split.2x1", #selector(flipSides(_:))), ("Comment to Agent…", "⇧⌘M", "text.bubble", #selector(goComment(_:))), ("Mention to Claude Code", "⌥⌘K", "at", #selector(mention(_:))), ("Copy Path", "", "doc.on.doc", #selector(copyPath(_:))),
 			("Copy Path and Line", "", "doc.on.doc", #selector(copySpot(_:))), ("Reveal in Finder", "", "folder", #selector(reveal(_:))), ("Zoom In", "⌘=", "plus.magnifyingglass", #selector(zoomIn(_:))),
-			("Zoom Out", "⌘−", "minus.magnifyingglass", #selector(zoomOut(_:))), ("Actual Size", "⌘0", "1.magnifyingglass", #selector(zoomReset(_:))), ("Find a Language Server", "", "shippingbox", #selector(findServer(_:)))]
+			("Zoom Out", "⌘−", "minus.magnifyingglass", #selector(zoomOut(_:))), ("Actual Size", "⌘0", "1.magnifyingglass", #selector(zoomReset(_:))), ("Find a Language Server", "", "shippingbox", #selector(findServer(_:))),
+			("Open Review", "⇧⌘R", "checklist", #selector(openReview(_:))), ("Next Change", "⌥⌘]", "chevron.down", #selector(nextStep(_:))),
+			("Previous Change", "⌥⌘[", "chevron.up", #selector(previousStep(_:))), ("Accept Change", "⌥⌘Y", "checkmark.circle", #selector(acceptStep(_:))), ("Reject Change", "⌥⌘N", "xmark.circle", #selector(rejectStep(_:))), ("Close Review", "", "xmark", #selector(closeReview(_:)))]
 		model.actions = commands.map { title, hint, icon, action in
 			Hit(id: "action " + title, section: "Actions", icon: icon, title: title, detail: "", hint: hint) { [unowned self] in _ = self.perform(action, with: nil) }
 		}
@@ -3161,7 +4083,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 					self.swiped += event.scrollingDeltaX
 					if !self.fired, abs(self.swiped) > 70, event.momentumPhase == [] {
 						self.fired = true
-						self.model.step(self.swiped > 0)
+						self.swiped > 0 ? self.back(nil) : self.forward(nil)
 					}
 					return nil
 				}
@@ -3176,6 +4098,19 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 			return nil
 		}
 		model.decide = { [unowned self] in self.decide($0) }
+		model.visit = { [unowned self] change in self.seek(self.model.hunks.firstIndex { $0.change == change } ?? -1) }
+		model.judge = { [unowned self] in self.judge($0, $1) }
+		model.walk = { [unowned self] in self.walk($0) }
+		model.resume = { [unowned self] in self.resume() }
+		model.back = { [unowned self] in self.back(nil) }
+		model.forward = { [unowned self] in self.forward(nil) }
+		model.turned = { [unowned self] in self.record(self.here($0)) }
+		NSEvent.addLocalMonitorForEvents(matching: .otherMouseDown) { [unowned self] event in
+			guard event.buttonNumber == 3 || event.buttonNumber == 4 else { return event }
+			event.buttonNumber == 3 ? self.back(nil) : self.forward(nil)
+			return nil
+		}
+		model.leave = { [unowned self] in self.leave() }
 		ide.workspaceFolders = { [unowned self] in self.model.root.isEmpty || self.model.roots.contains(self.model.root) ? self.model.roots : self.model.roots + [self.model.root] }
 		ide.call = { [unowned self] in self.tool($0, $1, $2, $3) }
 		ide.connected = { [unowned self] in
@@ -3190,10 +4125,16 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 		}
 		folders = model.$roots.combineLatest(model.$root).receive(on: DispatchQueue.main).sink { [unowned self] _ in self.ide.write() }
 		signal(SIGTERM, SIG_IGN)
-		quit.setEventHandler { NSApp.terminate(nil) }
+		quit.setEventHandler { [unowned self] in
+			self.ending = true
+			NSApp.terminate(nil)
+		}
 		quit.resume()
 		ide.start()
-		Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [unowned self] _ in self.watch() }
+		Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [unowned self] _ in
+			self.watch()
+			self.recheck()
+		}
 		watch()
 		model.up = { [unowned self] in
 			let parent = (self.model.root as NSString).deletingLastPathComponent
@@ -3220,7 +4161,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 		let screen = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
 		let size = NSSize(width: min(1280, screen.width * 0.7), height: min(860, screen.height * 0.8))
 		win = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
-		win.title = "slycbar editor"
+		win.title = "Slyed"
 		win.isReleasedWhenClosed = false
 		win.appearance = NSAppearance(named: .darkAqua)
 		win.titlebarAppearsTransparent = true
@@ -3242,10 +4183,17 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 		if win.frame.origin == .zero {
 			win.center()
 		}
-		win.makeKeyAndOrderFront(nil)
-		NSApp.activate(ignoringOtherApps: true)
+		bar.edit = { [unowned self] in self.surface() }
+		bar.start()
+		if !CommandLine.arguments.contains("tray") {
+			DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+				if !self.quiet {
+					self.surface()
+				}
+			}
+		}
 		first += CommandLine.arguments.dropFirst().filter { $0.hasPrefix("/") }
-		web.load(URLRequest(url: URL(string: "slycbar-editor://app/index.html")!))
+		web.load(URLRequest(url: URL(string: "slyed://app/index.html")!))
 	}
 }
 
@@ -3281,6 +4229,6 @@ if CommandLine.arguments.count > 1 && CommandLine.arguments[1] == "default" {
 }
 
 let host = Host()
-NSApplication.shared.setActivationPolicy(.regular)
+NSApplication.shared.setActivationPolicy(.accessory)
 NSApplication.shared.delegate = host
 NSApplication.shared.run()

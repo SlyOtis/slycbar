@@ -86,6 +86,8 @@ extension Space {
 			("trash", "already thrown away"),
 			("package caches", "downloaded again on the next install or build"),
 			("browser caches", "downloaded again on the next run"),
+			("tool caches", "rebuilt by the tool on its next run"),
+			("app caches", "rebuilt by the application when it runs next, it starts slower once"),
 			("docker", "images and layers are pulled or built again"),
 			("worktrees", "the branch keeps every commit"),
 			("build folders", "built again on the next build"),

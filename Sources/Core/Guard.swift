@@ -13,6 +13,10 @@ enum Guard {
 		var texts = [fields["content"], fields["new_string"], fields["new_source"]].compactMap { $0 as? String }
 		texts += (fields["edits"] as? [Json] ?? []).compactMap { $0["new_string"] as? String }
 		let bytes = texts.reduce(0) { $0 + $1.utf8.count }
+		if event == "PreToolUse", tool == "ExitPlanMode", let reason = Review.gate(sid) {
+			Base.say(Base.text(["hookSpecificOutput": ["hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason]] as Json))
+			return 0
+		}
 		if event == "PreToolUse" {
 			guard let checks = Space.check(path: path.isEmpty ? Base.home : path, bytes: bytes) else { return Base.fail("slybar guard: the machine could not be read") }
 			let over = checks.filter { $0.over }.map { c in

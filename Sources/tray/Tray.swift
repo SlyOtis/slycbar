@@ -71,7 +71,7 @@ struct Reading: Decodable {
 }
 
 enum Ask {
-	case free([String]), space, use(String), forget(String), warp(String), celery, login, fit
+	case free([String]), space, use(String), forget(String), warp(String), celery, edit, login, refresh, fit
 }
 
 struct Tip: Equatable {
@@ -84,6 +84,7 @@ struct Tip: Equatable {
 final class Model: ObservableObject {
 	@Published var reading = try! JSONDecoder().decode(Reading.self, from: Data("{}".utf8))
 	@Published var activating = ""
+	@Published var refreshing: Set<String> = []
 	@Published var going: Set<String> = []
 	@Published var armed = ""
 	@Published var closed: [String: Bool] = ["accounts": UserDefaults.standard.bool(forKey: "closed.accounts"), "resources": UserDefaults.standard.bool(forKey: "closed.resources")]
@@ -346,7 +347,7 @@ struct Card: View {
 		.background(RoundedRectangle(cornerRadius: 9).fill(account.active || over ? Ink.hover : Color.clear))
 		.overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(account.active ? Ink.accent : Color.clear, lineWidth: 1))
 		.overlay {
-			if model.activating == account.email {
+			if model.activating == account.email || model.refreshing.contains(account.email) {
 				Shimmer().clipShape(RoundedRectangle(cornerRadius: 9))
 			}
 		}
@@ -386,7 +387,7 @@ struct Slim: View {
 		.background(RoundedRectangle(cornerRadius: 9).fill(account.active || over ? Ink.hover : Color.clear))
 		.overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(account.active ? Ink.accent : Color.clear, lineWidth: 1))
 		.overlay {
-			if model.activating == account.email {
+			if model.activating == account.email || model.refreshing.contains(account.email) {
 				Shimmer().clipShape(RoundedRectangle(cornerRadius: 9))
 			}
 		}
@@ -432,9 +433,7 @@ struct Accounts: View {
 
 	var body: some View {
 		Panel(model: model, id: "accounts", title: "Claude accounts", panel: Ink.accent.opacity(0.13)) {
-			if !(ProcessInfo.processInfo.environment["SLYCBAR_CELERY"] ?? "").isEmpty, ["celery.html", "celery.m4a", "celery.mp4"].allSatisfy({ FileManager.default.fileExists(atPath: (Bundle.main.resourcePath ?? "") + "/" + $0) }) {
-				Round(tint: Ink.ok, tip: "Celery Man", action: { model.send(.celery) }) { Image(systemName: "leaf").font(.system(size: 11)) }
-			}
+			Round(tint: Ink.fg, tip: "Refresh accounts", action: { model.send(.refresh) }) { Image(systemName: "arrow.clockwise").font(.system(size: 11)) }
 			Round(tint: Ink.fg, tip: "Add account", action: { model.send(.login) }) { Text("+").font(.system(size: 16, weight: .medium)) }
 		} content: {
 			let accounts = model.reading.accounts ?? []
@@ -772,6 +771,10 @@ struct Top: View {
 					}
 				}
 				Spacer(minLength: 0)
+				Round(tint: Ink.ok, tip: "Open the editor", action: { model.send(.edit) }) { Image(systemName: "chevron.left.forwardslash.chevron.right").font(.system(size: 10)) }
+				if let video = ProcessInfo.processInfo.environment["SLYCBAR_CELERY"], FileManager.default.fileExists(atPath: video), ["celery.html", "celery.m4a"].allSatisfy({ FileManager.default.fileExists(atPath: (Bundle.main.resourcePath ?? "") + "/" + $0) }) {
+					Round(tint: Ink.ok, tip: "Celery Man", action: { model.send(.celery) }) { Image(systemName: "leaf").font(.system(size: 11)) }
+				}
 			}
 			.lineLimit(1)
 			.minimumScaleFactor(0.8)
@@ -859,11 +862,11 @@ struct Face: View {
 	}
 }
 
-final class Keyed: NSWindow {
+final class Keyed: NSPanel {
 	override var canBecomeKey: Bool { true }
 }
 
-final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMessageHandler {
+public final class Host: NSObject, NSWindowDelegate, WKScriptMessageHandler {
 	let script: String
 	let dir: String
 	let show: Bool
@@ -888,8 +891,9 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 	var loading = false
 	var again = false
 	var waiting: [() -> Void] = []
+	public var edit: () -> Void = {}
 
-	init(script: String, dir: String, show: Bool) {
+	public init(script: String, dir: String, show: Bool) {
 		self.script = script
 		self.dir = dir
 		self.show = show
@@ -1021,7 +1025,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 		return at
 	}
 
-	func reveal() {
+	public func reveal() {
 		last = ""
 		polling = shell(["refresh"])
 		probe()
@@ -1031,7 +1035,6 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 		win.setFrame(NSRect(x: b.screen.maxX - frame.width - 16, y: b.screen.maxY - frame.height - 8, width: frame.width, height: frame.height), display: true)
 		shownAt = Date()
 		model.now = Date()
-		NSApp.activate(ignoringOtherApps: true)
 		win.alphaValue = 0
 		win.makeKeyAndOrderFront(nil)
 		win.orderFrontRegardless()
@@ -1057,6 +1060,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 			config.mediaTypesRequiringUserActionForPlayback = []
 			config.userContentController.add(self, name: "tray")
 			let window = Keyed(contentRect: screen, styleMask: .borderless, backing: .buffered, defer: false)
+			window.hidesOnDeactivate = false
 			window.isReleasedWhenClosed = false
 			window.hasShadow = false
 			window.level = .screenSaver
@@ -1082,6 +1086,12 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 	}
 
 	func warp(_ email: String, changes: String = "") {
+		guard CGPreflightScreenCaptureAccess() else {
+			CGRequestScreenCaptureAccess()
+			NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+			log("warp not started, screen recording is not allowed")
+			return
+		}
 		let at = screenAt()
 		shell(changes.isEmpty ? ["warp", email, String(at.display)] : ["changes", changes, String(at.display)]) { text in
 			guard !text.isEmpty else { return }
@@ -1120,6 +1130,9 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 
 	func ask(_ ask: Ask) {
 		switch ask {
+		case .edit:
+			dismiss()
+			edit()
 		case .fit:
 			DispatchQueue.main.async { self.fit() }
 		case .free(let targets):
@@ -1140,13 +1153,28 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 		case .warp(let email):
 			warp(email)
 		case .celery:
-			overlay(screenAt().screen.frame, "celery.html", "", true)
+			var plain = CharacterSet.alphanumerics
+			plain.insert(charactersIn: "-_.!~*'()")
+			overlay(screenAt().screen.frame, "celery.html", "video=" + ((ProcessInfo.processInfo.environment["SLYCBAR_CELERY"] ?? "").addingPercentEncoding(withAllowedCharacters: plain) ?? ""), true)
 		case .login:
 			shell(["login"])
+		case .refresh:
+			guard model.refreshing.isEmpty else { return }
+			let emails = (model.reading.accounts ?? []).map(\.email)
+			model.refreshing = Set(emails)
+			refresh(emails)
 		}
 	}
 
-	func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+	func refresh(_ emails: [String]) {
+		guard let email = emails.first else { return }
+		shell(["refresh", email]) { _ in
+			self.load { self.model.refreshing.remove(email) }
+			self.refresh(Array(emails.dropFirst()))
+		}
+	}
+
+	public func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
 		guard let body = message.body as? [String: Any] else { return }
 		if body["ready"] != nil {
 			warpWin?.alphaValue = 1
@@ -1166,7 +1194,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 		}
 	}
 
-	func windowDidResignKey(_ notification: Notification) {
+	public func windowDidResignKey(_ notification: Notification) {
 		dismiss()
 	}
 
@@ -1197,23 +1225,25 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 		}
 	}
 
-	func applicationDidFinishLaunching(_ notification: Notification) {
+	public func start() {
 		shown = read(dir + "/show")
 		played = read(dir + "/play")
 		try? String(ProcessInfo.processInfo.processIdentifier).write(toFile: dir + "/pid", atomically: true, encoding: .utf8)
 		model.send = { [unowned self] in self.ask($0) }
 
 		item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-		let icon = NSImage(contentsOfFile: (Bundle.main.resourcePath ?? "") + "/icon.png")
-		icon?.size = NSSize(width: 18, height: 18)
+		let icon = NSImage(contentsOfFile: (Bundle.main.resourcePath ?? "") + "/tray.svg")
+		icon?.size = NSSize(width: 25, height: 18)
+		icon?.isTemplate = true
 		item.button?.image = icon
 		item.button?.target = self
 		item.button?.action = #selector(toggle(_:))
 
 		let b = bounds(NSScreen.main ?? NSScreen.screens[0])
 		let frame = NSRect(x: 0, y: 0, width: b.width, height: b.least)
-		win = Keyed(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
-		win.title = "slycbar"
+		win = Keyed(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+		win.hidesOnDeactivate = false
+		win.title = "Slyed"
 		win.isOpaque = false
 		win.backgroundColor = .clear
 		win.hasShadow = true
@@ -1259,12 +1289,3 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 		}
 	}
 }
-
-guard CommandLine.arguments.count > 2 else {
-	FileHandle.standardError.write(Data("usage: tray <slybar> <tray dir> [show]\n".utf8))
-	exit(2)
-}
-let host = Host(script: CommandLine.arguments[1], dir: CommandLine.arguments[2], show: CommandLine.arguments.count > 3 && CommandLine.arguments[3] == "show")
-NSApplication.shared.setActivationPolicy(.accessory)
-NSApplication.shared.delegate = host
-NSApplication.shared.run()

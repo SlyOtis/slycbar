@@ -1,7 +1,7 @@
 import Foundation
 
 public enum Core {
-	static let usage = "usage: slybar open|state|refresh [email]|use <email>|login|forget <email>|resources|scan|free <target>...|warp [email] [display]|changes <path> [display]|widget|edit <path> [line] [end]|server <path> [install]|plugin install|status|install|guard|statusline|space <command>"
+	static let usage = "usage: slybar open|state|refresh [email]|use <email>|login|forget <email>|resources|scan|free <target>...|warp [email] [display]|changes <path> [display]|widget|edit <path> [line] [end]|review <plan.json|-> [status|wait [seconds]|put]|mcp|compare <path> <path>|server <path> [install]|plugin install|status|install|guard|statusline|space <command>"
 
 	public static func run(_ args: [String]) -> Int32 {
 		Base.prepare()
@@ -20,6 +20,9 @@ public enum Core {
 		case "changes": return rest.isEmpty ? Base.fail(usage, 2) : Warp.changes(rest[0], rest.count > 1 ? rest[1] : "1")
 		case "widget": return Tools.widget()
 		case "edit": return Tools.edit(rest)
+		case "review": return Review.review(rest)
+		case "compare": return Review.compare(rest)
+		case "mcp": return Review.mcp()
 		case "server": return Tools.server(rest)
 		case "plugin": return Tools.plugin(rest.first ?? "status")
 		case "guard": return Guard.run()

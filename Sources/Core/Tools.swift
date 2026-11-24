@@ -11,8 +11,8 @@ enum Tools {
 			return 0
 		}
 		let task = Process()
-		task.executableURL = URL(fileURLWithPath: Base.trayApp + "/Contents/MacOS/tray")
-		task.arguments = [Base.bin, Base.tray, "show"]
+		task.executableURL = URL(fileURLWithPath: Base.editApp + "/Contents/MacOS/slyed")
+		task.arguments = ["tray", "show"]
 		task.environment = Base.env.filter { !$0.key.hasPrefix("CLAUDE") || $0.key == "CLAUDE_CONFIG_DIR" }
 		task.standardInput = FileHandle.nullDevice
 		task.standardOutput = FileHandle.nullDevice
@@ -20,13 +20,13 @@ enum Tools {
 		do {
 			try task.run()
 		} catch {
-			return Base.fail("the tray is not installed, run slybar install")
+			return Base.fail("Slyed is not installed, run slybar install")
 		}
 		return 0
 	}
 
 	static func widget() -> Int32 {
-		if FileManager.default.fileExists(atPath: Base.app) {
+		if FileManager.default.fileExists(atPath: Base.editApp) {
 			Base.run("/usr/bin/open", ["-g", "slycbar://reload"])
 		}
 		return 0
@@ -38,10 +38,10 @@ enum Tools {
 			path = FileManager.default.currentDirectoryPath + "/" + path
 		}
 		guard FileManager.default.fileExists(atPath: path) else { return Base.fail("no file at \(path)") }
-		guard FileManager.default.fileExists(atPath: Base.editApp) else { return Base.fail("the editor is not installed, run slybar install") }
+		guard FileManager.default.fileExists(atPath: Base.editApp) else { return Base.fail("Slyed is not installed, run slybar install") }
 		var allowed = CharacterSet.alphanumerics
 		allowed.insert(charactersIn: "-_.~")
-		var url = "slycbar-editor://open?path=" + (path.addingPercentEncoding(withAllowedCharacters: allowed) ?? path)
+		var url = "slyed://open?path=" + (path.addingPercentEncoding(withAllowedCharacters: allowed) ?? path)
 		if args.count > 1 {
 			url += "&line=" + args[1]
 		}
@@ -76,7 +76,7 @@ enum Tools {
 		for skill in ((try? FileManager.default.contentsOfDirectory(atPath: Base.here + "/skills")) ?? []).sorted() {
 			text += Base.read(Base.here + "/skills/" + skill + "/SKILL.md")
 		}
-		let sum = Base.run("/usr/bin/shasum", ["-a", "256"], input: text + "hooks: guard on SessionStart, PreToolUse, PostToolUse").out
+		let sum = Base.run("/usr/bin/shasum", ["-a", "256"], input: text + "hooks: guard on SessionStart, PreToolUse, PostToolUse, ExitPlanMode; mcp: review_open, review_status, review_wait").out
 		return "v1.0-" + sum.prefix(12)
 	}
 
@@ -95,8 +95,9 @@ enum Tools {
 			let hook: Json = ["type": "command", "command": Base.bin, "args": ["guard"], "timeout": 5]
 			try? fm.createDirectory(atPath: Base.plugin + "/hooks", withIntermediateDirectories: true)
 			Base.write(Base.plugin + "/hooks/hooks.json", Base.text(["hooks": ["SessionStart": [["hooks": [hook]]],
-				"PreToolUse": [["matcher": "Edit|Write|MultiEdit|NotebookEdit", "hooks": [hook]], ["matcher": "Bash|mcp__.*|Agent|Task", "hooks": [hook]]],
+				"PreToolUse": [["matcher": "Edit|Write|MultiEdit|NotebookEdit", "hooks": [hook]], ["matcher": "Bash|mcp__.*|Agent|Task", "hooks": [hook]], ["matcher": "ExitPlanMode", "hooks": [hook]]],
 				"PostToolUse": [["matcher": "Bash|mcp__.*|Agent|Task", "hooks": [hook]]]]] as Json, pretty: true))
+			Base.write(Base.plugin + "/.mcp.json", Base.text(["mcpServers": ["slycbar": ["command": Base.bin, "args": ["mcp"]]]] as Json, pretty: true))
 			let about = "Statusline, tray, widget, code editor and machine resources for Claude Code"
 			Base.write(Base.plugin + "/.claude-plugin/plugin.json", Base.text(["name": "slycbar", "version": carried, "description": about, "author": ["name": "Slytech"], "skills": "./skills/"] as Json, pretty: true))
 			Base.write(Base.plugin + "/.claude-plugin/marketplace.json", Base.text(["name": "slycbar", "description": "The slycbar plugin this checkout carries.", "owner": ["name": "Slytech"],

@@ -117,13 +117,18 @@ extension Work {
 		}
 
 		try tree()
-		for b in build(days, show: false) where b.state == "stale" {
-			if inuse(dirname(b.dir)) { continue }
+		let builds = build(days, show: false)
+		for b in builds where b.state == "stale" {
+			if inuse(dirname(b.dir)) || tracked(b.dir) { continue }
 			emit(row("stale", b.kb, "rm", b.dir, "build folder of a project untouched for \(days) days", "build folders"))
 		}
+		outputs(builds.filter { $0.state == "active" }, emit)
 
 		worktrees(emit)
 
+		let held = Set(lines(sh("lsof", ["-n", "-P", "-Fn"]).out).filter { starts($0, "n" + home + "/") }.map { String($0.dropFirst()) })
+		let opened = { (path: String) in held.contains { starts($0, path + "/") } }
+		let has = { (tool: String) in which(tool) != nil }
 		let caches = [
 			("\(home)/Library/Caches/go-build", "run", "go clean -cache -testcache", "go build cache", "package caches"),
 			("\(home)/Library/pnpm/store", "run", "pnpm store prune", "pnpm store, packages no project links", "package caches"),
@@ -135,12 +140,49 @@ extension Work {
 			("\(home)/.cache/uv", "run", "uv cache clean", "uv package cache", "package caches"),
 			("\(home)/Library/Developer/Xcode/DerivedData", "rm", "\(home)/Library/Developer/Xcode/DerivedData", "xcode derived data", "build folders"),
 			("\(home)/.Trash", "run", "find \"\(home)/.Trash\" -mindepth 1 -maxdepth 1 -exec rm -rf {} +", "trash", "trash"),
+			("\(home)/.cargo/registry", has("cargo-cache") ? "run" : "rm", has("cargo-cache") ? "cargo cache --autoclean" : "\(home)/.cargo/registry", "cargo registry, crates and their sources, downloaded again on the next build", "package caches"),
+			("\(home)/.cargo/git", "rm", "\(home)/.cargo/git", "cargo git checkouts of dependencies, cloned again on the next build", "package caches"),
+			("\(home)/go/pkg/mod", "run", "go clean -modcache", "go module cache", "package caches"),
+			("\(home)/.gradle/caches", "rm", "\(home)/.gradle/caches", "gradle dependency and build cache", "package caches"),
+			("\(home)/.m2/repository", "rm", "\(home)/.m2/repository", "maven local repository", "package caches"),
+			("\(home)/Library/Caches/pip", "rm", "\(home)/Library/Caches/pip", "pip download and wheel cache", "package caches"),
+			("\(home)/Library/Caches/pypoetry", "rm", "\(home)/Library/Caches/pypoetry", "poetry package cache", "package caches"),
+			("\(home)/Library/Caches/CocoaPods", has("pod") ? "run" : "rm", has("pod") ? "pod cache clean --all" : "\(home)/Library/Caches/CocoaPods", "cocoapods pod and spec cache", "package caches"),
+			("\(home)/.bun/install/cache", has("bun") ? "run" : "rm", has("bun") ? "bun pm cache rm" : "\(home)/.bun/install/cache", "bun package cache", "package caches"),
+			("\(home)/Library/Caches/deno", has("deno") ? "run" : "rm", has("deno") ? "deno clean" : "\(home)/Library/Caches/deno", "deno module cache", "package caches"),
+			("\(home)/Library/Caches/Yarn", "rm", "\(home)/Library/Caches/Yarn", "yarn package cache", "package caches"),
+			("\(home)/.yarn/berry/cache", "rm", "\(home)/.yarn/berry/cache", "yarn berry package cache", "package caches"),
+			("\(home)/.pub-cache", has("dart") ? "run" : "rm", has("dart") ? "dart pub cache clean --force" : "\(home)/.pub-cache", "dart and flutter package cache", "package caches"),
+			("\(home)/.hex/packages", "rm", "\(home)/.hex/packages", "hex package cache", "package caches"),
+			("\(home)/Library/Caches/org.swift.swiftpm", "rm", "\(home)/Library/Caches/org.swift.swiftpm", "swift package manager repository cache", "package caches"),
+			("\(home)/Library/Caches/node-gyp", "rm", "\(home)/Library/Caches/node-gyp", "node-gyp headers, downloaded again on the next native build", "package caches"),
+			("\(home)/Library/Caches/typescript", "rm", "\(home)/Library/Caches/typescript", "typescript type acquisition cache", "package caches"),
+			("\(home)/Library/Caches/electron", "rm", "\(home)/Library/Caches/electron", "electron downloads", "package caches"),
+			("\(home)/Library/Caches/electron-builder", "rm", "\(home)/Library/Caches/electron-builder", "electron-builder downloads", "package caches"),
+			("\(home)/Library/Caches/ms-playwright-go", "rm", "\(home)/Library/Caches/ms-playwright-go", "playwright go browsers, reinstalled on demand", "browser caches"),
+			("\(home)/Library/Caches/gopls", "rm", "\(home)/Library/Caches/gopls", "gopls index cache, rebuilt on its next start", "tool caches"),
+			("\(home)/Library/Caches/golangci-lint", has("golangci-lint") ? "run" : "rm", has("golangci-lint") ? "golangci-lint cache clean" : "\(home)/Library/Caches/golangci-lint", "golangci-lint cache", "tool caches"),
+			("\(home)/.cache/pre-commit", "rm", "\(home)/.cache/pre-commit", "pre-commit hook environments", "tool caches"),
+			("\(home)/.gradle/wrapper/dists", "rm", "\(home)/.gradle/wrapper/dists", "gradle distributions the wrappers downloaded", "toolchains and images"),
+			("\(home)/.konan", "rm", "\(home)/.konan", "kotlin native toolchains and caches", "toolchains and images"),
 		]
 		for (path, action, target, why, group) in caches {
-			if loaded(path) { continue }
+			if loaded(path) || opened(path) { continue }
 			guard exists(path) else { continue }
 			let k = cached(path)
 			if k > 102400 { emit(row("cache", "\(k)", action, target, why, group)) }
+		}
+
+		let named = Set(caches.map { $0.0 })
+		let kept = re("^(com\\.apple\\.|slycbar|claude|cloudkit|geoservices|huggingface|torch|whisper|lm-studio|models)")
+		for (root, group) in [("\(home)/.cache", "tool caches"), ("\(home)/Library/Caches", "app caches")] {
+			for l in under(root, 1) {
+				let v = fields(l, 1)
+				let d = v[1]
+				guard whole(v[0]) > 102400, folder(d), !named.contains(d), !hit(kept, basename(d).lowercased()) else { continue }
+				if loaded(d) || opened(d) { continue }
+				emit(row("cache", v[0], "rm", d, group == "app caches" ? "cache of \(basename(d)), no process holds a file in it, rebuilt when it runs next" : "\(basename(d)) cache, no process holds a file in it, rebuilt by its tool on the next run", group))
+			}
 		}
 
 		for avd in glob("\(home)/.android/avd", ".avd") {
@@ -217,6 +259,55 @@ extension Work {
 				} else if sh("find", ["-E", t, "(", "-type", "d", "-regex", ".*/(\(Work.artifacts))", "-prune", ")", "-o", "-type", "f", "-newer", old, "-print", "-quit"], limit: limit).out.isEmpty {
 					emit(row("stale", "\(cached(t))", "run", "git -C \"\(main)\" worktree remove \"\(t)\"",
 						"worktree of \(basename(main)), clean and untouched for \(unused) days, its branch keeps the commits", "worktrees"))
+				}
+			}
+		}
+	}
+
+	func tracked(_ dir: String) -> Bool {
+		!git(dir, ["ls-files", "--", "."]).out.isEmpty
+	}
+
+	func outputs(_ builds: [(kb: String, state: String, dir: String)], _ emit: Emit) {
+		let ref = mark(DateComponents(day: -unused))
+		defer { drop(ref) }
+		let still = { (path: String) in sh("find", [path, "-newer", ref, "-print", "-quit"], limit: self.limit).out.isEmpty }
+		for b in builds {
+			let project = dirname(b.dir)
+			let name = basename(b.dir)
+			if inuse(project) || tracked(b.dir) { continue }
+			if Work.caches.contains(name) {
+				guard still(b.dir) else { continue }
+				emit(row("cache", b.kb, "rm", b.dir, "\(name) cache of \(basename(project)), not written for \(unused) days, rebuilt on the next run", "build folders"))
+			} else if name == ".next", folder(b.dir + "/cache") {
+				let k = at(tabs(at(lines(size(b.dir + "/cache")), 0)), 0)
+				guard whole(k) > 51200, still(b.dir + "/cache") else { continue }
+				emit(row("cache", k, "rm", b.dir + "/cache", "next.js build cache of \(basename(project)), not written for \(unused) days, rebuilt on the next build", "build folders"))
+			} else if name == "target", exists(project + "/Cargo.toml") {
+				let cargo = which("cargo") != nil
+				for p in ((try? FileManager.default.contentsOfDirectory(atPath: b.dir)) ?? []).sorted(by: before) {
+					let d = b.dir + "/" + p
+					guard folder(d) else { continue }
+					guard still(d) else {
+						let old = lines(sh("find", [d + "/incremental", "-mindepth", "1", "-maxdepth", "1", "-type", "d", "!", "-newer", ref]).out)
+						guard !old.isEmpty else { continue }
+						let k = at(tabs(lines(sh("du", ["-skc"] + old, limit: limit).out).last ?? ""), 0)
+						guard whole(k) > 102400 else { continue }
+						emit(row("stale", k, "run", "find \"\(d)/incremental\" -mindepth 1 -maxdepth 1 -type d -mtime +\(unused) -exec rm -rf {} +",
+							"incremental data of \(old.count) crates in the rust \(p) build of \(basename(project)), not written for \(unused) days while that build is in use", "build folders"))
+						continue
+					}
+					let k = at(tabs(at(lines(size(d)), 0)), 0)
+					guard whole(k) > 102400 else { continue }
+					let manifest = "cargo clean --manifest-path \"\(project)/Cargo.toml\""
+					let why = "rust \(p) output of \(basename(project)), not written for \(unused) days while the project moved"
+					if cargo, folder(d + "/.fingerprint") {
+						emit(row("stale", k, "run", manifest + " --profile " + (p == "debug" ? "dev" : p), why, "build folders"))
+					} else if cargo, p == "doc" {
+						emit(row("stale", k, "run", manifest + " --doc", why, "build folders"))
+					} else {
+						emit(row("stale", k, "rm", d, why, "build folders"))
+					}
 				}
 			}
 		}

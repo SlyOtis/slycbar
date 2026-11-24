@@ -163,7 +163,12 @@ extension Work {
 		if show { section("build artifacts under \(projects), stale = project untouched for \(days) days") }
 		note("sizing the build folders under \(projects)")
 		var out: [String] = []
-		for d in lines(sh("find", ["-E", projects, "-type", "d", "-regex", ".*/(\(Work.artifacts))", "-prune", "-print"]).out) {
+		var dirs = lines(sh("find", ["-E", projects, "-type", "d", "-regex", ".*/(\(Work.artifacts))", "-prune", "-print"]).out)
+		for m in lines(sh("find", ["-E", projects, "-maxdepth", "4", "(", "-type", "d", "-regex", ".*/(\(Work.artifacts)|\\.git)", "-prune", ")", "-o", "-type", "f", "-name", "go.mod", "-print"]).out) {
+			let d = dirname(m) + "/bin"
+			if folder(d), sh("git", ["-C", dirname(m), "check-ignore", "-q", "bin"], out: .nullDevice).code == 0 { dirs.append(d) }
+		}
+		for d in dirs {
 			let k = known[d] ?? at(tabs(at(lines(size(d)), 0)), 0)
 			guard let n = Int(k), n > 51200 else { continue }
 			let touched = sh("find", [

@@ -1,4 +1,4 @@
-import { createApp, h, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { createApp, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import icon from "./icon.svg?raw"
 import { basicSetup } from 'codemirror'
 import { oneDark } from '@codemirror/theme-one-dark'
@@ -7,12 +7,12 @@ import MarCode from '@/components/MarCode'
 import MarEditorFrame from '@/components/MarEditorFrame'
 import { useTheme } from '@/composables/useTheme'
 import '@/assets/baseline.css'
-import { Compartment, EditorState, StateEffect } from '@codemirror/state'
+import { Compartment, EditorState, StateEffect, StateField } from '@codemirror/state'
 import { HighlightStyle, LanguageDescription, StreamLanguage, syntaxHighlighting } from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
 import { languages } from '@codemirror/language-data'
 import { MergeView, getChunks, getOriginalDoc, unifiedMergeView } from '@codemirror/merge'
-import { EditorView, GutterMarker, gutter, hoverTooltip, keymap } from '@codemirror/view'
+import { Decoration, EditorView, GutterMarker, gutter, hoverTooltip, keymap } from '@codemirror/view'
 import { Prec } from '@codemirror/state'
 import { copyLineDown, deleteLine, moveLineDown, moveLineUp, selectParentSyntax } from '@codemirror/commands'
 import { openSearchPanel } from '@codemirror/search'
@@ -151,7 +151,7 @@ async function pick(name, text) {
   }
 }
 
-const state = reactive({ path: '', text: '', live: '', kind: '', media: '', url: '', sides: false, mode: 'both', language: 'plaintext', diagnostics: [], key: 0 })
+const state = reactive({ path: '', text: '', live: '', kind: '', media: '', url: '', sides: false, locked: false, mode: 'both', language: 'plaintext', diagnostics: [], key: 0, review: null })
 const extra = new Compartment()
 const diffed = new Compartment()
 let view = null
@@ -162,6 +162,10 @@ let mounted = null
 let sideSupport = []
 let current = ''
 let timer = 0
+let pair = null
+let side = 'b'
+let region = -1
+let wanted = null
 
 function post(body) {
   return window.webkit.messageHandlers.editor.postMessage(body)
@@ -454,32 +458,258 @@ const Idle = {
           h('img', { class: 'idle-owl echo', src: owl }),
           h('img', { class: 'idle-owl', src: owl })
         ]),
-        h('div', { class: 'idle-text' }, [h('b', 'slycbar editor'), h('span', 'Open a file from the sidebar · ⌘K to search'), h('span', { class: 'vital' }, readout.value)])
+        h('div', { class: 'idle-text' }, [h('b', 'Slyed'), h('span', 'See every change before it lands'), h('span', 'Open a file from the sidebar · ⌘K to search'), h('span', { class: 'vital' }, readout.value)])
       ])
     }
   }
+}
+
+function focused(name) {
+  return EditorView.updateListener.of(function (u) {
+    if (u.focusChanged && u.view.hasFocus) side = name
+    if (u.selectionSet && u.view.hasFocus) recount()
+  })
+}
+
+const focus = StateEffect.define()
+const dim = Decoration.line({ class: 'cm-blurred' })
+
+function blur(doc, from, to) {
+  const first = Math.max(1, doc.lineAt(Math.min(from, doc.length)).number - 1)
+  const last = Math.min(doc.lines, doc.lineAt(Math.min(Math.max(from, to - 1), doc.length)).number + 1)
+  const marks = []
+  for (let n = 1; n <= doc.lines; n++) {
+    if (n < first || n > last) marks.push(dim.range(doc.line(n).from))
+  }
+  return Decoration.set(marks)
+}
+
+const blurred = StateField.define({
+  create() { return Decoration.none },
+  update(set, tr) {
+    for (const e of tr.effects) {
+      if (e.is(focus)) set = blur(tr.state.doc, e.value.from, e.value.to)
+    }
+    return set
+  },
+  provide(f) { return EditorView.decorations.from(f) }
+})
+
+function nearest(view, pos) {
+  const left = view === pair.a
+  let best = -1
+  let gap = Infinity
+  pair.chunks.forEach(function (c, n) {
+    const from = left ? c.fromA : c.fromB
+    const to = left ? c.toA : c.toB
+    const d = pos < from ? from - pos : pos > to ? pos - to : 0
+    if (d < gap) {
+      gap = d
+      best = n
+    }
+  })
+  return best
+}
+
+const fenced = EditorView.domEventHandlers({
+  mousedown(event, view) {
+    if (!pair) return false
+    const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
+    if (pos == null) return false
+    const line = view.state.doc.lineAt(pos)
+    let dimmed = false
+    view.state.field(blurred).between(line.from, line.from, function () { dimmed = true })
+    if (!dimmed) return false
+    event.preventDefault()
+    const n = nearest(view, pos)
+    if (n >= 0) seek(n)
+    return true
+  }
+})
+
+const review = [blurred, fenced, EditorState.readOnly.of(true), EditorState.changeFilter.of(function () { return false }), EditorView.theme({ '.cm-line.cm-blurred': { filter: 'blur(2.5px)', opacity: '0.35', transition: 'filter 0.2s, opacity 0.2s' } })]
+
+let bounds = null
+let free = false
+let steering = false
+
+function centre() {
+  bounds = null
+  const dom = pair ? pair.dom.parentElement || pair.dom : null
+  if (dom) dom.classList.remove('pinned')
+  if (!pair || !state.locked || region < 0 || region >= pair.chunks.length) return
+  const c = pair.chunks[region]
+  const inB = c.toB > c.fromB
+  const ed = inB ? pair.b : pair.a
+  const from = inB ? c.fromB : c.fromA
+  const to = Math.max(from, (inB ? c.toB : c.toA) - 1)
+  const length = ed.state.doc.length
+  const offset = ed.documentTop - dom.getBoundingClientRect().top + dom.scrollTop
+  const top = offset + ed.lineBlockAt(Math.min(from, length)).top
+  const bottom = offset + ed.lineBlockAt(Math.min(to, length)).bottom
+  const tall = dom.clientHeight
+  const most = Math.max(0, dom.scrollHeight - tall)
+  const low = bottom - top <= tall ? top - (tall - (bottom - top)) / 2 : top
+  const high = bottom - top <= tall ? low : bottom - tall
+  bounds = [Math.min(most, Math.max(0, low)), Math.min(most, Math.max(0, high))]
+  steering = true
+  dom.scrollTop = bounds[0]
+  steering = false
+  dom.classList.toggle('pinned', !free && bounds[1] - bounds[0] < 1)
+}
+
+function hold(value) {
+  return bounds ? Math.min(bounds[1], Math.max(bounds[0], value)) : value
+}
+
+function steer(dom) {
+  dom.addEventListener('wheel', function (event) {
+    if (!state.locked || free || !bounds || event.metaKey || event.ctrlKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return
+    event.preventDefault()
+    steering = true
+    dom.scrollTop = hold(dom.scrollTop + event.deltaY)
+    steering = false
+  }, { passive: false })
+  dom.addEventListener('scroll', function () {
+    if (steering || free || !bounds || !state.locked) return
+    const held = hold(dom.scrollTop)
+    if (Math.abs(held - dom.scrollTop) > 0.5) {
+      steering = true
+      dom.scrollTop = held
+      steering = false
+    }
+  })
+  const watch = new ResizeObserver(function () { requestAnimationFrame(centre) })
+  watch.observe(dom)
+  return watch
+}
+
+function seek(target) {
+  if (!pair) {
+    wanted = target
+    return { at: -1, of: 0, done: false }
+  }
+  const chunks = pair.chunks
+  const at = target === 'next' ? region + 1 : target === 'prev' ? region - 1 : target === 'last' ? chunks.length - 1 : target === 'first' ? 0 : target
+  if (!chunks.length || at < 0 || at >= chunks.length) return { at: region, of: chunks.length, done: true }
+  region = at
+  const c = chunks[at]
+  const inB = c.toB > c.fromB
+  const ed = inB ? pair.b : pair.a
+  const length = ed.state.doc.length
+  const from = Math.min(inB ? c.fromB : c.fromA, length)
+  const to = Math.min(Math.max(from, (inB ? c.toB : c.toA) - 1), length)
+  if (state.locked) {
+    pair.a.dispatch({ effects: focus.of({ from: c.fromA, to: c.toA }) })
+    pair.b.dispatch({ effects: focus.of({ from: c.fromB, to: c.toB }) })
+  }
+  if (state.locked) {
+    free = false
+    ed.dispatch({ selection: { anchor: from, head: to } })
+    requestAnimationFrame(centre)
+  } else {
+    ed.dispatch({ selection: { anchor: from, head: to }, effects: EditorView.scrollIntoView(from, { y: 'center' }) })
+  }
+  side = inB ? 'b' : 'a'
+  post({ region: { at: at, of: chunks.length } })
+  return { at: at, of: chunks.length, done: false }
 }
 
 const Sides = {
   setup() {
     const el = ref(null)
     let both = null
+    let watch = null
     onMounted(function () {
       view = null
+      region = -1
+      side = 'b'
+      const editable = state.locked ? [EditorState.readOnly.of(true)] : [EditorView.updateListener.of(function (u) { if (u.docChanged) changed(u.state.doc.toString()) })]
+      const room = state.locked ? review : []
       both = new MergeView({
-        a: { doc: original || '', extensions: [basicSetup, oneDark, paint, sideSupport, EditorState.readOnly.of(true)] },
-        b: { doc: current, extensions: [basicSetup, oneDark, paint, sideSupport, EditorView.updateListener.of(function (u) { if (u.docChanged) changed(u.state.doc.toString()) })] },
+        a: { doc: original || '', extensions: [basicSetup, oneDark, paint, sideSupport, EditorState.readOnly.of(true), focused('a')].concat(room) },
+        b: { doc: current, extensions: [basicSetup, oneDark, paint, sideSupport, focused('b')].concat(editable, room) },
         parent: el.value,
-        collapseUnchanged: { margin: 3, minSize: 6 },
+        collapseUnchanged: state.locked ? undefined : { margin: 3, minSize: 6 },
         gutter: true
       })
+      pair = both
+      if (state.locked) watch = steer(el.value)
+      post({ region: { at: -1, of: both.chunks.length } })
+      if (wanted !== null) {
+        const target = wanted
+        wanted = null
+        seek(target)
+      }
     })
-    onBeforeUnmount(function () { if (both) both.destroy() })
+    onBeforeUnmount(function () {
+      if (watch) watch.disconnect()
+      if (pair === both) pair = null
+      if (both) both.destroy()
+    })
     return function () { return h('div', { class: 'sides', ref: el }) }
   }
 }
 
+const Tree = {
+  setup() {
+    const el = ref(null)
+    function centre() {
+      nextTick(function () {
+        const on = el.value ? el.value.querySelector('.hunk.on') : null
+        if (on) on.scrollIntoView({ block: 'center' })
+      })
+    }
+    onMounted(centre)
+    watch(function () { return state.review ? state.review.at : -1 }, centre)
+    return function () {
+      return h('div', { class: 'tree', ref: el }, state.review.files.map(function (file) {
+        return h('section', { key: file.n }, [
+          h('header', [
+            h('b', file.n + '. ' + file.name),
+            h('span', { class: 'where' }, file.path),
+            h('span', { class: 'what' }, file.title),
+            h('span', { class: 'tally' }, [file.added ? h('i', { class: 'up' }, '+' + file.added) : null, file.removed ? h('i', { class: 'down' }, '−' + file.removed) : null])
+          ]),
+          file.why ? h('p', { class: 'why' }, file.why) : null,
+          file.hunks.map(function (hunk) {
+            return h('div', { key: hunk.id, class: ['hunk', hunk.status, { on: hunk.id === state.review.at }], onClick: function () { post({ hunk: hunk.id }) } }, [
+              h('div', { class: 'head' }, [h('b', hunk.label), h('span', hunk.status), hunk.text ? h('q', hunk.text) : null]),
+              h('div', { class: 'rows' }, hunk.rows.map(function (row) {
+                return h('div', { class: row.t === '+' ? 'row add' : row.t === '-' ? 'row del' : 'row' }, [h('i', row.a || ''), h('i', row.b || ''), h('u', row.t), h('code', row.s)])
+              }))
+            ])
+          })
+        ])
+      }))
+    }
+  }
+}
+
 window.slyc = {
+  review(doc) {
+    clearTimeout(timer)
+    view = null
+    state.kind = ''
+    state.media = ''
+    state.sides = false
+    state.locked = false
+    state.diagnostics = []
+    state.review = doc
+    return true
+  },
+  hunk(at, marks) {
+    if (!state.review) return false
+    state.review.at = at
+    state.review.files.forEach(function (file) {
+      file.hunks.forEach(function (hunk) {
+        if (!marks[hunk.id]) return
+        hunk.status = marks[hunk.id].status
+        hunk.text = marks[hunk.id].text
+      })
+    })
+    return true
+  },
   async show(doc) {
     clearTimeout(timer)
     const picked = doc.media ? { language: 'plaintext', support: [] } : await pick(doc.name, doc.text)
@@ -493,6 +723,9 @@ window.slyc = {
     state.live = doc.text
     state.media = doc.media || ''
     state.url = doc.url || ''
+    state.locked = !!doc.locked
+    state.review = null
+    wanted = null
     state.kind = doc.media ? '' : /\.(md|markdown|mdx)$/i.test(doc.name) ? 'markdown' : /\.html?$/i.test(doc.name) ? 'html' : /\.svg$/i.test(doc.name) ? 'svg' : ''
     state.language = picked.language
     state.diagnostics = []
@@ -537,11 +770,20 @@ window.slyc = {
     return true
   },
   spot() {
-    if (!view) return { line: 1, end: 1, text: '' }
-    const range = view.state.selection.main
-    const first = view.state.doc.lineAt(range.from)
-    const last = view.state.doc.lineAt(range.to)
-    return { line: first.number, end: last.number, text: view.state.sliceDoc(first.from, last.to) }
+    const ed = pair ? (side === 'a' ? pair.a : pair.b) : view
+    if (!ed) return { line: 1, end: 1, text: '', side: '' }
+    const range = ed.state.selection.main
+    const first = ed.state.doc.lineAt(range.from)
+    const last = ed.state.doc.lineAt(range.to)
+    return { line: first.number, end: last.number, text: ed.state.sliceDoc(first.from, last.to), side: pair ? (side === 'a' ? 'base' : 'proposed') : '' }
+  },
+  region(target) {
+    return seek(target)
+  },
+  loose() {
+    free = true
+    requestAnimationFrame(centre)
+    return true
   },
   format() {
     return tidy()
@@ -556,6 +798,7 @@ window.slyc = {
   },
   focus() {
     if (view) view.focus()
+    else if (pair) (side === 'a' ? pair.a : pair.b).focus()
     return true
   },
   diagnose(path, list) {
@@ -573,6 +816,7 @@ createApp({
     return function () {
       const slots = {
         default: function () {
+          if (state.review) return h(Tree)
           if (state.media === 'video') return h('div', { class: 'media' }, h('video', { key: state.url, src: state.url, controls: true, autoplay: false }))
           if (state.media === 'audio') return h('div', { class: 'media' }, h('audio', { key: state.url, src: state.url, controls: true }))
           if (state.media === 'image') return h('div', { class: 'media' }, h('img', { key: state.url, src: state.url }))
@@ -584,7 +828,7 @@ createApp({
         }
       }
       if (state.kind === 'markdown') slots.preview = function () { return h('div', { class: 'preview' }, h(MarBlockReader, { key: state.path, modelValue: state.live, contentType: 'markdown' })) }
-      if (state.kind === 'html') slots.preview = function () { return h('iframe', { class: 'web', sandbox: 'allow-scripts', srcdoc: '<base href="slycbar-editor://file' + encodeURI(state.path.slice(0, state.path.lastIndexOf('/') + 1)) + '">' + state.live }) }
+      if (state.kind === 'html') slots.preview = function () { return h('iframe', { class: 'web', sandbox: 'allow-scripts', srcdoc: '<base href="slyed://file' + encodeURI(state.path.slice(0, state.path.lastIndexOf('/') + 1)) + '">' + state.live }) }
       if (state.kind === 'svg') slots.preview = function () { return h('div', { class: 'media checker' }, h('img', { src: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(state.live) })) }
       return h(MarEditorFrame, { mode: state.kind ? state.mode : 'code', split: 'columns', diagnostics: state.diagnostics }, slots)
     }

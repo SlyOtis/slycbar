@@ -58,6 +58,8 @@ html, body, #app { height: 100%; margin: 0; background: #1e1f22; color: rgba(255
 .mar-editor-frame-code { animation: rise 0.22s ease-out; }
 .sides { height: 100%; overflow: auto; font-size: 0.75rem; }
 .sides .cm-mergeView, .sides .cm-mergeViewEditors { min-height: 100%; }
+.sides.pinned, .sides.pinned .cm-scroller { scrollbar-width: none; }
+.sides.pinned::-webkit-scrollbar, .sides.pinned .cm-scroller::-webkit-scrollbar { display: none; }
 #app .cm-editor .cm-scroller .cm-selectionBackground, #app .cm-editor.cm-focused .cm-scroller .cm-selectionBackground { background-color: rgba(120, 160, 230, 0.2) !important; }
 #app .cm-editor ::selection { background-color: rgba(120, 160, 230, 0.2) !important; }
 .cm-tallies .tally { display: inline-flex; gap: 0.35em; padding: 0 0.5em 0 0.2em; font: 600 0.62rem/1.9 ui-monospace, Menlo, monospace; }
@@ -79,6 +81,37 @@ html, body, #app { height: 100%; margin: 0; background: #1e1f22; color: rgba(255
 #app button.chunk { border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 1em; background: rgba(30, 31, 34, 0.9); color: rgba(255, 255, 255, 0.8); font: 600 0.62rem/1.6 -apple-system, sans-serif; padding: 0 0.7em; cursor: pointer; }
 #app button.chunk.accept:hover { background: #6aab73; color: #14181a; border-color: #6aab73; }
 #app button.chunk.reject:hover { background: #f75464; color: #fff; border-color: #f75464; }
+::-webkit-scrollbar { width: 0.7rem; height: 0.7rem; background: transparent; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { border: 0.27rem solid transparent; border-radius: 1rem; background: rgba(255, 255, 255, 0.24); background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover, ::-webkit-scrollbar-thumb:active { border-width: 0.1rem; background: linear-gradient(#ef8221, #b4632f); background-clip: content-box; }
+.tree { height: 100%; overflow: auto; box-sizing: border-box; padding: 0 0 40vh; font-size: 0.75rem; }
+.tree section { margin: 0 0 1.2em; }
+.tree header { position: sticky; top: 0; z-index: 2; display: flex; align-items: baseline; gap: 0.8em; padding: 0.55em 1em; background: #26282d; border-bottom: 1px solid rgba(255, 255, 255, 0.1); white-space: nowrap; }
+.tree header b { color: rgba(255, 255, 255, 0.92); font-weight: 600; }
+.tree header .where { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: rgba(255, 255, 255, 0.5); font-size: 0.9em; }
+.tree header .what { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: rgba(255, 255, 255, 0.7); }
+.tree header .tally { display: inline-flex; gap: 0.5em; font: 600 0.9em/1.4 ui-monospace, Menlo, monospace; }
+.tree .why { margin: 0; padding: 0.5em 1em; white-space: pre-wrap; color: rgba(255, 255, 255, 0.7); }
+.tree .hunk { margin: 0.6em 0.8em; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 0.5em; overflow: hidden; opacity: 0.55; cursor: pointer; transition: opacity 0.15s, border-color 0.15s; }
+.tree .hunk:hover { opacity: 0.85; }
+.tree .hunk.on { opacity: 1; border-color: rgba(180, 99, 47, 0.9); }
+.tree .hunk.accepted { border-left: 0.25em solid #6aab73; }
+.tree .hunk.rejected { border-left: 0.25em solid #f75464; }
+.tree .head { display: flex; align-items: baseline; gap: 0.8em; padding: 0.25em 0.8em; background: rgba(255, 255, 255, 0.04); color: rgba(255, 255, 255, 0.5); font-size: 0.9em; }
+.tree .head b { color: rgba(255, 255, 255, 0.9); font-variant-numeric: tabular-nums; }
+.tree .hunk.accepted .head span { color: #6aab73; }
+.tree .hunk.rejected .head span { color: #f75464; }
+.tree .head q { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(255, 255, 255, 0.8); }
+.tree .rows { overflow-x: auto; font: 1em/1.5 ui-monospace, Menlo, monospace; }
+.tree .row { display: grid; grid-template-columns: 5ch 5ch 2ch 1fr; min-width: max-content; }
+.tree .row i { font-style: normal; text-align: right; padding-right: 1ch; color: rgba(255, 255, 255, 0.3); user-select: none; }
+.tree .row u { text-decoration: none; text-align: center; color: rgba(255, 255, 255, 0.4); user-select: none; }
+.tree .row code { font: inherit; white-space: pre; color: rgba(255, 255, 255, 0.8); padding-right: 1em; }
+.tree .row.add { background: rgba(106, 171, 115, 0.13); }
+.tree .row.add u, .tree .row.add code { color: #a9d9b1; }
+.tree .row.del { background: rgba(247, 84, 100, 0.12); }
+.tree .row.del u, .tree .row.del code { color: #f2a3ab; }
 .tip { max-width: min(46em, 90vw); padding: 0.5em 0.7em; font: 0.72rem/1.5 -apple-system, sans-serif; color: rgba(255, 255, 255, 0.9); }
 .tip p { margin: 0 0 0.4em; white-space: pre-wrap; }
 .tip pre { margin: 0 0 0.4em; padding: 0.4em 0.6em; border-radius: 0.4em; background: rgba(255, 255, 255, 0.06); font: 0.72rem/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; color: #56a8f5; }
