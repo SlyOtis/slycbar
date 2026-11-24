@@ -17,6 +17,7 @@ enum Base {
 	static let client = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 	static let editApp = home + "/Applications/Slyed.app"
 	static let plugin = home + "/.slycbar/plugin"
+	static let settings = home + "/.slycbar/settings.json"
 	static let agent = "no.slytech.slycbar"
 	static let plist = home + "/Library/LaunchAgents/no.slytech.slycbar.plist"
 	static let bin = home + "/.local/bin/slybar"

@@ -1094,7 +1094,10 @@ public final class Host: NSObject, NSWindowDelegate, WKScriptMessageHandler {
 		}
 		let at = screenAt()
 		shell(changes.isEmpty ? ["warp", email, String(at.display)] : ["changes", changes, String(at.display)]) { text in
-			guard !text.isEmpty else { return }
+			guard !text.isEmpty else {
+				self.log("warp not started, nothing to show" + (changes.isEmpty ? "" : " for " + changes))
+				return
+			}
 			try? text.write(toFile: self.dir + "/warp.json", atomically: true, encoding: .utf8)
 			var plain = CharacterSet.alphanumerics
 			plain.insert(charactersIn: "-_.!~*'()")

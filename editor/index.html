@@ -3,7 +3,14 @@
 <head>
 <meta charset="utf-8">
 <style>
-:root { --mar-code-bg: #1e1f22; }
+:root { --mar-code-bg: #1e1f22; --code-font: "Roboto Mono", ui-monospace, Menlo, monospace; --code-ligatures: common-ligatures discretionary-ligatures contextual; --code-smoothing: antialiased; }
+html { -webkit-font-smoothing: var(--code-smoothing); text-rendering: optimizeLegibility; }
+#app .cm-editor .cm-scroller, #app .cm-editor .cm-content, #app .cm-editor .cm-gutters, .tree .rows, .tip pre, .tip .where { font-family: var(--code-font) !important; font-variant-ligatures: var(--code-ligatures); }
+#app .cm-traces .cm-gutterElement { padding: 0; }
+.trace { display: block; width: 0.22em; height: 100%; min-height: 1.3em; margin: 0 0.12em; border-radius: 0.2em; cursor: help; }
+.trace.read { background: rgba(86, 168, 245, 0.75); }
+.trace.edited { background: rgba(239, 130, 33, 0.9); }
+.trace.wrote { background: rgba(106, 171, 115, 0.85); }
 html, body { position: fixed; inset: 0; overflow: hidden; overscroll-behavior: none; }
 html, body, #app { height: 100%; margin: 0; background: #1e1f22; color: rgba(255, 255, 255, 0.66); font: 0.8rem/1.4 -apple-system, sans-serif; }
 .idle { --tx: 0; --ty: 0; position: relative; height: 100%; overflow: hidden; background: radial-gradient(circle at 50% 44%, #262a33 0%, #15161a 60%); perspective: 900px; }

@@ -25,6 +25,30 @@ enum Tools {
 		return 0
 	}
 
+	static let defaults: Json = ["font": "Roboto Mono", "ligatures": true, "smoothing": true, "traces": true]
+
+	static func settings(_ args: [String]) -> Int32 {
+		var stored = Base.json(Base.settings)
+		guard let key = args.first else {
+			Base.say(Base.text(defaults.merging(stored) { _, set in set }, pretty: true))
+			return 0
+		}
+		guard let standard = defaults[key] else { return Base.fail("unknown setting \(key), one of " + defaults.keys.sorted().joined(separator: ", ")) }
+		guard args.count > 1 else {
+			Base.say(Base.text(["value": stored[key] ?? standard]))
+			return 0
+		}
+		if standard is Bool {
+			guard args[1] == "true" || args[1] == "false" else { return Base.fail("\(key) is true or false") }
+			stored[key] = args[1] == "true"
+		} else {
+			stored[key] = args[1...].joined(separator: " ")
+		}
+		Base.write(Base.settings, Base.text(stored, pretty: true))
+		Base.say(Base.text(defaults.merging(stored) { _, set in set }, pretty: true))
+		return 0
+	}
+
 	static func widget() -> Int32 {
 		if FileManager.default.fileExists(atPath: Base.editApp) {
 			Base.run("/usr/bin/open", ["-g", "slycbar://reload"])

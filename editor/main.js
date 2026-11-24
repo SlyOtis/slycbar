@@ -7,6 +7,10 @@ import MarCode from '@/components/MarCode'
 import MarEditorFrame from '@/components/MarEditorFrame'
 import { useTheme } from '@/composables/useTheme'
 import '@/assets/baseline.css'
+import '@fontsource/roboto-mono/400.css'
+import '@fontsource/roboto-mono/400-italic.css'
+import '@fontsource/roboto-mono/500.css'
+import '@fontsource/roboto-mono/700.css'
 import { Compartment, EditorState, StateEffect, StateField } from '@codemirror/state'
 import { HighlightStyle, LanguageDescription, StreamLanguage, syntaxHighlighting } from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
@@ -218,6 +222,40 @@ const tallies = gutter({
   }
 })
 
+let traced = []
+let tracing = true
+const retrace = StateEffect.define()
+
+class Trace extends GutterMarker {
+  constructor(list) {
+    super()
+    this.list = list
+  }
+  eq(other) {
+    return other.list.length === this.list.length && other.list.every(function (t, i) { return t === this.list[i] }, this)
+  }
+  toDOM() {
+    const el = document.createElement('span')
+    const acts = this.list.map(function (t) { return t.act })
+    el.className = 'trace ' + (acts.includes('wrote') ? 'wrote' : acts.includes('edited') ? 'edited' : 'read')
+    el.title = this.list.map(function (t) { return t.who + ' ' + t.act + ' ' + (t.from === t.to ? 'line ' + t.from : 'lines ' + t.from + '-' + t.to) + (t.when ? ' · ' + t.when : '') }).join('\n')
+    return el
+  }
+}
+
+const traces = gutter({
+  class: 'cm-traces',
+  lineMarker(v, line) {
+    if (!tracing || !traced.length) return null
+    const n = v.state.doc.lineAt(line.from).number
+    const hit = traced.filter(function (t) { return n >= t.from && n <= t.to })
+    return hit.length ? new Trace(hit) : null
+  },
+  lineMarkerChange(update) {
+    return update.transactions.some(function (tr) { return tr.effects.some(function (e) { return e.is(retrace) }) })
+  }
+})
+
 function control(type, action) {
   const el = document.createElement('button')
   el.className = 'chunk ' + type
@@ -406,7 +444,7 @@ function attach(code) {
   mounted = code
   view = code && code.view ? code.view() : null
   if (!view) return
-  view.dispatch({ effects: StateEffect.appendConfig.of([keys, extra.of(support), paint, EditorView.updateListener.of(function (u) { if (u.selectionSet || u.docChanged) recount() }), diffed.of(merge()),EditorState.languageData.of(function () { return [{ autocomplete: complete }] }), hover]) })
+  view.dispatch({ effects: StateEffect.appendConfig.of([keys, traces, extra.of(support), paint, EditorView.updateListener.of(function (u) { if (u.selectionSet || u.docChanged) recount() }), diffed.of(merge()),EditorState.languageData.of(function () { return [{ autocomplete: complete }] }), hover]) })
   view.focus()
   recount()
 }
@@ -698,6 +736,22 @@ window.slyc = {
     state.review = doc
     return true
   },
+  traces(path, list) {
+    if (path !== state.path) return false
+    traced = list
+    if (view) view.dispatch({ effects: retrace.of(null) })
+    return true
+  },
+  settings(given) {
+    const set = Object.assign({ font: 'Roboto Mono', ligatures: true, smoothing: true, traces: true }, given)
+    const root = document.documentElement.style
+    root.setProperty('--code-font', '"' + String(set.font).replace(/"/g, '') + '", ui-monospace, Menlo, monospace')
+    root.setProperty('--code-ligatures', set.ligatures ? 'common-ligatures discretionary-ligatures contextual' : 'none')
+    root.setProperty('--code-smoothing', set.smoothing ? 'antialiased' : 'auto')
+    tracing = set.traces !== false
+    if (view) view.dispatch({ effects: retrace.of(null) })
+    return true
+  },
   hunk(at, marks) {
     if (!state.review) return false
     state.review.at = at
@@ -725,6 +779,7 @@ window.slyc = {
     state.url = doc.url || ''
     state.locked = !!doc.locked
     state.review = null
+    traced = []
     wanted = null
     state.kind = doc.media ? '' : /\.(md|markdown|mdx)$/i.test(doc.name) ? 'markdown' : /\.html?$/i.test(doc.name) ? 'html' : /\.svg$/i.test(doc.name) ? 'svg' : ''
     state.language = picked.language

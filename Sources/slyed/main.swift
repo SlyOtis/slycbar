@@ -321,6 +321,8 @@ final class Model: ObservableObject {
 	var turned: (String) -> Void = { _ in }
 	var back: () -> Void = {}
 	var forward: () -> Void = {}
+	@Published var earlier = false
+	@Published var later = false
 
 	func label(_ path: String) -> String {
 		path == NSHomeDirectory() ? "~" : path == "/" ? "/" : (path as NSString).lastPathComponent
@@ -901,8 +903,7 @@ struct Row: View {
 		HStack(spacing: 5) {
 			Text(node.dir ? (model.open.contains(node.path) ? "▾" : "▸") : "").font(.system(size: 9)).foregroundStyle(Color.white.opacity(0.5)).frame(width: 10)
 			Image(systemName: node.dir ? "folder" : "doc").font(.system(size: 10)).foregroundStyle(Color.white.opacity(0.5)).frame(width: 14)
-			Text(name).foregroundStyle(tint).italic(hidden).lineLimit(1).truncationMode(.middle).layoutPriority(1)
-			Spacer(minLength: 4)
+			Text(name).foregroundStyle(tint).italic(hidden).lineLimit(1).truncationMode(.middle).frame(maxWidth: .infinity, alignment: .leading).layoutPriority(1)
 			if let count = model.counts[node.path] {
 				Counts(added: count.0, removed: count.1)
 			}
@@ -2108,8 +2109,8 @@ struct Shell: View {
 			HStack(spacing: 6) {
 				Spacer().frame(width: 70)
 				Icon(name: "sidebar.left", tip: "Files, ⌘1") { withAnimation(.easeOut(duration: 0.2)) { model.side.toggle() } }
-				Icon(name: "chevron.left", tip: "Back, ⌘[") { model.back() }
-				Icon(name: "chevron.right", tip: "Forward, ⌘]") { model.forward() }
+				Icon(name: "chevron.left", tip: "Back, ⌘[") { model.back() }.disabled(!model.earlier).opacity(model.earlier ? 1 : 0.3)
+				Icon(name: "chevron.right", tip: "Forward, ⌘]") { model.forward() }.disabled(!model.later).opacity(model.later ? 1 : 0.3)
 				Text(model.file.isEmpty ? "Slyed" : (model.file as NSString).lastPathComponent).font(.system(size: 13, weight: .semibold))
 				if model.dirty.contains(model.file) {
 					Circle().fill(Ink.dim).frame(width: 6, height: 6)
@@ -2506,14 +2507,20 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 	let bar = tray.Host(script: Bundle.main.object(forInfoDictionaryKey: "SlycbarCli") as? String ?? "", dir: (cache as NSString).deletingLastPathComponent + "/tray", show: CommandLine.arguments.contains("show"))
 	var quiet = false
 	var ending = false
+	var seeking = false
+	var tuned = Date.distantFuture
 	var win: NSWindow!
 	var web: WKWebView!
 	var ready = false
 	var first: [String] = []
 	var drafts: [String: String] = [:]
 	var top = ""
-	var past: [String] = []
-	var ahead: [String] = []
+	var past: [String] = [] {
+		didSet { model.earlier = !past.isEmpty }
+	}
+	var ahead: [String] = [] {
+		didSet { model.later = !ahead.isEmpty }
+	}
 	var rolled = 0.0
 	var parsed: [Int: (String, Agent)] = [:]
 	var swiped = 0.0
@@ -2971,6 +2978,60 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 		}
 	}
 
+	func trace(_ path: String) {
+		let agents = model.agents
+		let home = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"] ?? NSHomeDirectory() + "/.claude"
+		let text = drafts[path] ?? decode(path)
+		DispatchQueue.global().async {
+			let fm = FileManager.default
+			let clock = ISO8601DateFormatter()
+			clock.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+			let shown = DateFormatter()
+			shown.dateFormat = "d MMM HH:mm"
+			let count = text.components(separatedBy: "\n").count
+			var found: [[String: Any]] = []
+			for agent in agents where !agent.sid.isEmpty {
+				for project in (try? fm.contentsOfDirectory(atPath: home + "/projects")) ?? [] {
+					guard let handle = FileHandle(forReadingAtPath: home + "/projects/" + project + "/" + agent.sid + ".jsonl") else { continue }
+					let size = handle.seekToEndOfFile()
+					handle.seek(toFileOffset: size > 2000000 ? size - 2000000 : 0)
+					let body = String(decoding: handle.readDataToEndOfFile(), as: UTF8.self)
+					handle.closeFile()
+					for line in body.split(separator: "\n") where line.contains(path) && line.contains("\"tool_use\"") {
+						guard let entry = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else { continue }
+						let when = (entry["timestamp"] as? String).flatMap { clock.date(from: $0) }.map { shown.string(from: $0) } ?? ""
+						for block in (entry["message"] as? [String: Any])?["content"] as? [[String: Any]] ?? [] {
+							guard block["type"] as? String == "tool_use", let input = block["input"] as? [String: Any], input["file_path"] as? String == path, let tool = block["name"] as? String else { continue }
+							if tool == "Read" {
+								let from = max(1, input["offset"] as? Int ?? 1)
+								found.append(["from": from, "to": min(count, from + (input["limit"] as? Int ?? 2000) - 1), "act": "read", "who": agent.name, "when": when])
+							} else if tool == "Write" {
+								found.append(["from": 1, "to": count, "act": "wrote", "who": agent.name, "when": when])
+							} else if tool == "Edit", let new = input["new_string"] as? String, !new.isEmpty, let hit = text.range(of: new) {
+								let from = text[..<hit.lowerBound].components(separatedBy: "\n").count
+								found.append(["from": from, "to": from + new.components(separatedBy: "\n").count - 1, "act": "edited", "who": agent.name, "when": when])
+							}
+						}
+					}
+					break
+				}
+			}
+			DispatchQueue.main.async {
+				guard self.model.file == path else { return }
+				self.page("return window.slyc.traces(path, list)", ["path": path, "list": Array(found.suffix(400))])
+			}
+		}
+	}
+
+	func tune() {
+		let path = NSHomeDirectory() + "/.slycbar/settings.json"
+		let changed = stamp(path)
+		guard ready, changed != tuned else { return }
+		tuned = changed
+		let given = FileManager.default.contents(atPath: path).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+		page("return window.slyc.settings(given)", ["given": given])
+	}
+
 	func decode(_ path: String) -> String {
 		guard let data = FileManager.default.contents(atPath: path) else { return "" }
 		return String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
@@ -3255,6 +3316,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 				let info = result as? [String: Any]
 				self.model.preview = info?["preview"] as? Bool ?? false
 				self.model.mode = info?["mode"] as? String ?? "both"
+				self.trace(path)
 				self.page("return window.slyc.diff(on, undefined, sides)", ["on": self.model.diff && original != nil, "sides": self.model.sides && original != nil])
 				if let line = self.pending {
 					self.page("return window.slyc.line(n, e)", ["n": line, "e": self.pendingEnd ?? 0])
@@ -3765,6 +3827,13 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 			DispatchQueue.main.async {
 				self.model.agents = agents
 				self.parsed = fresh
+				if self.seeking {
+					self.seeking = false
+					let edited = agents.flatMap { agent in agent.files.filter { agent.acts[$0] != "reads" } }
+					if let latest = edited.max(by: { self.stamp($0) < self.stamp($1) }) {
+						self.show(latest)
+					}
+				}
 				self.model.meters = meters
 				func share(_ id: String) -> Double { (Double(meters.first { $0.id == id }?.value ?? "") ?? 0) / 100 }
 				self.page("return window.slyc.vitals(v)", ["v": ["cpu": share("cpu"), "mem": share("mem"), "seven": share("7d"), "fable": share("fable"), "busy": agents.filter { $0.status == "busy" }.count]])
@@ -3816,9 +3885,10 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 				firstPair = nil
 			}
 			if model.root.isEmpty {
-				model.root = NSHomeDirectory()
+				model.root = model.roots.last ?? NSHomeDirectory()
 				refresh()
 			}
+			tune()
 			replyHandler(nil, nil)
 		} else if let at = body["hunk"] as? Int {
 			seek(at)
@@ -4017,6 +4087,13 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 				self.model.status = "nothing to warp, " + self.model.short(target) + " is in no git repository"
 				return
 			}
+			if !self.model.file.isEmpty {
+				let dir = (target as NSString).deletingLastPathComponent
+				guard !git(dir, ["log", "-n", "1", "--format=%h", "--follow", "--", target]).out.isEmpty || !git(dir, ["diff", "--numstat", "HEAD", "--", target]).out.isEmpty else {
+					self.model.status = "nothing to warp, " + (target as NSString).lastPathComponent + " has no git history"
+					return
+				}
+			}
 			try? "open \(Int(Date().timeIntervalSince1970))\nchanges \(target)".write(toFile: tray + "/play", atomically: true, encoding: .utf8)
 		}
 		model.compare = { [unowned self] ref in
@@ -4134,6 +4211,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 		Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [unowned self] _ in
 			self.watch()
 			self.recheck()
+			self.tune()
 		}
 		watch()
 		model.up = { [unowned self] in
@@ -4183,7 +4261,11 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 		if win.frame.origin == .zero {
 			win.center()
 		}
-		bar.edit = { [unowned self] in self.surface() }
+		bar.edit = { [unowned self] in
+			self.surface()
+			self.seeking = true
+			self.watch()
+		}
 		bar.start()
 		if !CommandLine.arguments.contains("tray") {
 			DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
