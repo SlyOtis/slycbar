@@ -321,6 +321,7 @@ final class Model: ObservableObject {
 	var turned: (String) -> Void = { _ in }
 	var back: () -> Void = {}
 	var forward: () -> Void = {}
+	@Published var hidden: Set<String> = []
 	@Published var earlier = false
 	@Published var later = false
 
@@ -570,7 +571,6 @@ final class Model: ObservableObject {
 	var recent: [String] = []
 	var top = ""
 	var line: (Int) -> Void = { _ in }
-	var zoom: (Bool, Double) -> Void = { _, _ in }
 	var done: () -> Void = {}
 	var jump: (String, Int?) -> Void = { _, _ in }
 	@Published var proposal = ""
@@ -915,7 +915,7 @@ struct Row: View {
 			} else if !mark.isEmpty && mark != "·" {
 				Text(mark == "?" ? "U" : mark).font(.system(size: 10, weight: .semibold)).foregroundStyle(tint)
 			}
-			More(model: model, path: node.path, dir: node.dir).opacity(over ? 1 : 0).allowsHitTesting(over)
+			More(model: model, path: node.path, dir: node.dir).opacity(over ? 1 : 0).allowsHitTesting(over).padding(.leading, -5)
 		}
 		.font(.system(size: 12 * model.scale))
 		.opacity(hidden ? 0.4 : 1)
@@ -1007,7 +1007,7 @@ enum Ink {
 	static let dim = Color.white.opacity(0.6)
 	static let line = Color.white.opacity(0.08)
 	static let hover = Color.white.opacity(0.1)
-	static let accent = Color(red: 0.706, green: 0.388, blue: 0.184)
+	static var accent = Color(red: 0.706, green: 0.388, blue: 0.184)
 	static let pane = Color.black.opacity(0.28)
 }
 
@@ -1983,7 +1983,7 @@ struct Shell: View {
 			HStack(spacing: 6) {
 				Mark(model: model, path: model.root, on: true)
 				VStack(alignment: .leading, spacing: 0) {
-					Text(model.label(model.root)).font(.system(size: 12 * model.scale, weight: .semibold)).lineLimit(1).truncationMode(.head).tip(model.root)
+					Text(model.label(model.root)).font(.system(size: 12 * model.scale, weight: .semibold)).lineLimit(1).truncationMode(.tail).tip(model.root)
 						.contextMenu { Ops(model: model, path: model.root, dir: true, top: true) }
 					Trail(model: model)
 				}
@@ -2191,7 +2191,7 @@ struct Shell: View {
 							.overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Ink.accent.opacity(0.45), lineWidth: 1))
 							.padding(.bottom, 4)
 						}
-						if !model.agents.isEmpty {
+						if !model.agents.isEmpty, !model.hidden.contains("agents") {
 							Color.clear.frame(height: 4)
 								.contentShape(Rectangle())
 								.onHover { $0 ? NSCursor.resizeUpDown.push() : NSCursor.pop() }
@@ -2223,7 +2223,7 @@ struct Shell: View {
 								}
 							}
 						}
-						if !model.meters.isEmpty {
+						if !model.meters.isEmpty, !model.hidden.contains("meters") {
 							Color.clear.frame(height: 4)
 							Meters(meters: model.meters, account: model.account, scale: model.scale)
 								.background(RoundedRectangle(cornerRadius: 9).fill(Ink.accent.opacity(0.14)))
@@ -2244,7 +2244,7 @@ struct Shell: View {
 					VStack(spacing: 6) {
 						Web(view: web).frame(maxWidth: .infinity, maxHeight: .infinity)
 							.clipShape(RoundedRectangle(cornerRadius: 10))
-							.overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Ink.line, lineWidth: 1))
+							.overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Ink.line, lineWidth: 1).opacity(model.preview && model.mode == "both" ? 0 : 1))
 							.shadow(color: .black.opacity(0.4), radius: 9, y: 2)
 						if model.reviewing {
 							Feedback(model: model)
@@ -2262,18 +2262,15 @@ struct Shell: View {
 						if let count = model.counts[model.file] {
 							Counts(added: count.0, removed: count.1).tip("Lines added and removed against HEAD")
 						}
-						ForEach(model.stats, id: \.self) { Text($0) }
+						if !model.hidden.contains("stats") {
+							ForEach(model.stats, id: \.self) { Text($0) }
+						}
 						Spacer(minLength: 8)
 						if model.claude {
 							Text("Claude Code").tip("A Claude Code session is connected to this editor through /ide")
 						}
 						Text(model.server)
 						Text(model.cursor)
-						HStack(spacing: 0) {
-							Act(name: "minus", tip: "Zoom out, ⌘−") { model.zoom(false, -0.1) }
-							Text("\(Int((model.zoomed / 1.2 * 100).rounded()))%").frame(minWidth: 36).contentShape(Rectangle()).onTapGesture { model.zoom(false, 0) }.tip("Zoom of the code and preview, click to reset")
-							Act(name: "plus", tip: "Zoom in, ⌘=") { model.zoom(false, 0.1) }
-						}
 						Icon(name: "wand.and.stars", tip: "Format the file", action: model.format)
 						Hover { over in
 							Button(action: model.warp) {
@@ -2282,6 +2279,7 @@ struct Shell: View {
 							.buttonStyle(.plain).focusable(false)
 						}
 						.tip("Warp through the git history of what is open, by who did what")
+						.opacity(model.hidden.contains("warp") ? 0 : 1).allowsHitTesting(!model.hidden.contains("warp")).frame(maxWidth: model.hidden.contains("warp") ? 0 : nil)
 					}
 					.font(.system(size: 11)).monospacedDigit().foregroundStyle(Ink.dim).lineLimit(1)
 					.padding(.leading, 12).padding(.trailing, 6).frame(height: 22).padding(.bottom, 5)
@@ -2522,6 +2520,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 		didSet { model.later = !ahead.isEmpty }
 	}
 	var rolled = 0.0
+	var picked: [String: Any] = [:]
 	var parsed: [Int: (String, Agent)] = [:]
 	var swiped = 0.0
 	var fired = false
@@ -3030,6 +3029,24 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 		tuned = changed
 		let given = FileManager.default.contents(atPath: path).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
 		page("return window.slyc.settings(given)", ["given": given])
+		model.hidden = Set(["agents", "meters", "stats", "warp"].filter { given[$0] as? Bool == false })
+		if let hex = given["accent"] as? String, hex.count == 7, let rgb = Int(hex.dropFirst(), radix: 16) {
+			Ink.accent = Color(red: Double(rgb >> 16 & 255) / 255, green: Double(rgb >> 8 & 255) / 255, blue: Double(rgb & 255) / 255)
+		} else {
+			Ink.accent = Color(red: 0.706, green: 0.388, blue: 0.184)
+		}
+		let kept = UserDefaults.standard
+		if kept.double(forKey: "width") == 0, let wide = (given["width"] as? NSNumber)?.doubleValue {
+			model.width = min(900, max(140, wide))
+		}
+		if kept.double(forKey: "scale") == 0, let scale = (given["scale"] as? NSNumber)?.doubleValue {
+			model.scale = min(2, max(0.7, scale))
+		}
+		if kept.double(forKey: "zoom") == 0, let zoom = (given["zoom"] as? NSNumber)?.doubleValue {
+			model.zoomed = min(3, max(0.5, zoom))
+			web.pageZoom = model.zoomed
+		}
+		model.objectWillChange.send()
 	}
 
 	func decode(_ path: String) -> String {
@@ -3382,12 +3399,10 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 			model.scale = step == 0 ? 1.1 : min(2, max(0.7, model.scale + step * 1.1))
 			UserDefaults.standard.set(model.scale, forKey: "scale")
 		} else {
-			model.zoomed = step == 0 ? 1.2 : min(3, max(0.5, model.zoomed + step * 1.2))
-			web.pageZoom = model.zoomed
+			page("return window.slyc.zoom(step)", ["step": step])
 			if model.step >= 0 {
 				page("return window.slyc.loose()", [:])
 			}
-			UserDefaults.standard.set(model.zoomed, forKey: "zoom")
 		}
 	}
 
@@ -3610,6 +3625,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 
 	@objc func goComment(_ sender: Any?) {
 		guard !model.file.isEmpty else { return }
+		picked = [:]
 		model.palette = "comment"
 		model.query = ""
 	}
@@ -3635,6 +3651,18 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 			return
 		}
 		let path = model.file
+		if !picked.isEmpty {
+			let line = picked["line"] as? Int ?? 0
+			let files = picked["files"] as? [String] ?? []
+			var message = "Comment from Slyed on the preview of \(path)" + (line > 0 ? ":\(line)" : "") + ", on the element " + (picked["trail"] as? String ?? "") + ". " + text + "\nElement:\n" + (picked["html"] as? String ?? "")
+			if !files.isEmpty {
+				message += "\nFiles the preview is built from:\n" + files.joined(separator: "\n")
+			}
+			message += "\nChange only that element, in this file or in the files it is built from."
+			picked = [:]
+			hand(path, message, "preview")
+			return
+		}
 		page("return window.slyc.spot()", [:]) { result in
 			let spot = result as? [String: Any] ?? [:]
 			let from = spot["line"] as? Int ?? 1
@@ -3658,15 +3686,19 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 				message += "\nUncommitted change there:\n" + hunk
 			}
 			message += "\nChange only this spot."
-			slyed.copy(message)
-			let agent = self.model.agents.first { $0.files.contains(path) } ?? self.model.agents.first { !$0.dir.isEmpty && path.hasPrefix($0.dir + "/") }
-			guard let agent, !agent.socket.isEmpty else {
-				self.model.status = "no agent on this file, comment copied"
-				return
-			}
-			self.model.status = self.post(agent.socket, message) ? "comment sent to " + agent.name : "not sent to " + agent.name + ", comment copied"
-			note("comments.log", agent.name + " " + path + ":\(from)")
+			self.hand(path, message, String(from))
 		}
+	}
+
+	func hand(_ path: String, _ message: String, _ spot: String) {
+		slyed.copy(message)
+		let agent = model.agents.first { $0.files.contains(path) } ?? model.agents.first { !$0.dir.isEmpty && path.hasPrefix($0.dir + "/") }
+		guard let agent, !agent.socket.isEmpty else {
+			model.status = "no agent on this file, comment copied"
+			return
+		}
+		model.status = post(agent.socket, message) ? "comment sent to " + agent.name : "not sent to " + agent.name + ", comment copied"
+		note("comments.log", agent.name + " " + path + ":" + spot)
 	}
 
 	@objc func goLine(_ sender: Any?) {
@@ -3903,6 +3935,18 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 			win.isDocumentEdited = true
 			settle(path, text)
 			replyHandler(nil, nil)
+		} else if let remark = body["remark"] as? [String: Any], body["path"] as? String == model.file, !model.reviewing {
+			picked = remark
+			model.palette = "comment"
+			model.query = ""
+			replyHandler(nil, nil)
+		} else if let key = body["zoom"] as? String, let value = (body["value"] as? NSNumber)?.doubleValue, key.hasPrefix("zoom.code.") || key.hasPrefix("zoom.preview.") {
+			let path = NSHomeDirectory() + "/.slycbar/settings.json"
+			var stored = FileManager.default.contents(atPath: path).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+			stored[key] = NSDecimalNumber(string: String(format: "%.2f", min(3, max(0.5, value))))
+			try? FileManager.default.createDirectory(atPath: NSHomeDirectory() + "/.slycbar", withIntermediateDirectories: true)
+			try? JSONSerialization.data(withJSONObject: stored, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: path), options: .atomic)
+			replyHandler(nil, nil)
 		} else if let uri = body["goto"] as? String, let url = URL(string: uri) {
 			pending = body["line"] as? Int ?? 1
 			show(url.path)
@@ -4122,7 +4166,6 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 			self.page("return window.slyc.mode(mode)", ["mode": mode])
 		}
 		web.pageZoom = model.zoomed
-		model.zoom = { [unowned self] in self.zoom($0, $1) }
 		model.review = { [unowned self] path in
 			self.model.diff = true
 			self.model.sides = false

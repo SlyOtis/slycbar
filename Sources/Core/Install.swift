@@ -58,6 +58,8 @@ enum Install {
 		}
 		try? fm.removeItem(atPath: build + "/components-nimtech")
 		try? fm.copyItem(atPath: Base.here + "/editor/components-nimtech", toPath: build + "/components-nimtech")
+		try? fm.removeItem(atPath: build + "/fonts")
+		try? fm.copyItem(atPath: Base.here + "/editor/fonts", toPath: build + "/fonts")
 		guard Base.run("pnpm", ["install", "--frozen-lockfile"], dir: build).code == 0, Base.run("pnpm", ["build"], dir: build).code == 0 else { return Base.fail("the editor page did not build") }
 		try? fm.copyItem(atPath: build + "/dist", toPath: Base.editApp + "/Contents/Resources/editor")
 		try? fm.copyItem(atPath: Base.here + "/editor/servers.json", toPath: Base.editApp + "/Contents/Resources/editor/servers.json")

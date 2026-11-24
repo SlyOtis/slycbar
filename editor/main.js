@@ -1,4 +1,4 @@
-import { createApp, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { createApp, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue'
 import icon from "./icon.svg?raw"
 import { basicSetup } from 'codemirror'
 import { oneDark } from '@codemirror/theme-one-dark'
@@ -155,7 +155,8 @@ async function pick(name, text) {
   }
 }
 
-const state = reactive({ path: '', text: '', live: '', kind: '', media: '', url: '', sides: false, locked: false, mode: 'both', language: 'plaintext', diagnostics: [], key: 0, review: null })
+const state = reactive({ path: '', text: '', live: '', kind: '', media: '', url: '', sides: false, locked: false, mode: 'both', language: 'plaintext', diagnostics: [], key: 0, review: null, picking: false })
+const zooms = reactive({})
 const extra = new Compartment()
 const diffed = new Compartment()
 let view = null
@@ -168,6 +169,7 @@ let current = ''
 let timer = 0
 let pair = null
 let side = 'b'
+let fronted = 'code'
 let region = -1
 let wanted = null
 
@@ -459,6 +461,159 @@ function changed(value) {
   }, 150)
 }
 
+function scope(pane) {
+  if (pane === 'preview') return 'zoom.preview.' + (state.kind || state.media)
+  const name = (state.path.split('/').pop() || '').toLowerCase()
+  return 'zoom.code.' + ((name.includes('.') ? name.split('.').pop() : name).replace(/[^a-z0-9_+-]/g, '') || 'plain')
+}
+
+function zoom(pane, by) {
+  const key = scope(pane)
+  const next = by ? Math.min(3, Math.max(0.5, Math.round(((zooms[key] || 1) + by) * 100) / 100)) : 1
+  zooms[key] = next
+  post({ zoom: key, value: next })
+}
+
+function front(event) {
+  const frame = event.target.closest && event.target.closest('.mar-editor-frame-code, .mar-editor-frame-preview')
+  if (frame) fronted = frame.classList.contains('mar-editor-frame-preview') ? 'preview' : 'code'
+}
+
+document.addEventListener('pointerdown', front, true)
+document.addEventListener('focusin', front)
+window.addEventListener('blur', function () {
+  if (document.activeElement) front({ target: document.activeElement })
+})
+
+watchEffect(function () {
+  const root = document.documentElement.style
+  root.setProperty('--code-zoom', String(zooms[scope('code')] || 1))
+  root.setProperty('--preview-zoom', String(zooms[scope('preview')] || 1))
+  nextTick(function () {
+    [view, pair && pair.a, pair && pair.b].forEach(function (ed) { if (ed) ed.requestMeasure() })
+  })
+})
+
+const probing = String.raw`
+  var doc = root.ownerDocument
+  var ring = doc.createElement('div')
+  var armed = false
+  var over = null
+  function trail(el) {
+    var parts = []
+    for (var at = el; at && at.nodeType === 1 && at !== root && parts.length < 6; at = at.parentElement) {
+      var names = typeof at.className === 'string' ? at.className.trim() : (at.getAttribute('class') || '').trim()
+      parts.unshift(at.localName + (at.id ? '#' + at.id : '') + (names ? '.' + names.split(/\s+/).slice(0, 3).join('.') : ''))
+    }
+    return parts.join(' > ')
+  }
+  function arm(on) {
+    armed = on
+    over = null
+    ring.style.cssText = 'display:none'
+    root.style.cursor = on ? 'crosshair' : ''
+    if (on && !ring.parentNode) (doc.body || doc.documentElement).appendChild(ring)
+    send({ armed: on })
+  }
+  root.addEventListener('mousemove', function (event) {
+    var el = event.target
+    if (!armed || el === over || el === root || el === ring || el.nodeType !== 1 || el.closest('.zoomer')) return
+    over = el
+    var box = el.getBoundingClientRect()
+    ring.style.cssText = 'position:fixed;z-index:2147483647;pointer-events:none;box-sizing:border-box;border:2px solid #ef8221;border-radius:4px;background:rgba(239,130,33,0.14);left:' + box.left + 'px;top:' + box.top + 'px;width:' + box.width + 'px;height:' + box.height + 'px'
+  }, true)
+  root.addEventListener('click', function (event) {
+    if (!armed || event.target.closest('.zoomer')) return
+    event.preventDefault()
+    event.stopPropagation()
+    var el = over || event.target
+    var files = []
+    doc.querySelectorAll('link[href], script[src], img[src], source[src], iframe[src]').forEach(function (used) {
+      var url = used.href || used.src
+      if (url && files.indexOf(url) < 0) files.push(url)
+    })
+    var picked = { trail: trail(el), id: el.id || '', text: (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 300), html: el.outerHTML.slice(0, 1200), files: files }
+    arm(false)
+    send({ picked: picked })
+  }, true)
+  doc.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape' && armed) arm(false)
+    if (!own || armed || event.key !== 'c' || event.metaKey || event.ctrlKey || event.altKey) return
+    if (event.target.isContentEditable || /^(input|textarea|select)$/.test(event.target.localName)) return
+    event.preventDefault()
+    arm(true)
+  }, true)
+  return arm
+`
+const probe = new Function('root', 'send', 'own', probing)
+const framed = '<script>(function () { var arm = (function (root, send, own) {' + probing + '})(document.documentElement, function (said) { parent.postMessage({ slyc: said }, "*") }, true); parent.postMessage({ slyc: { armed: false } }, "*"); addEventListener("message", function (event) { if (event.source === parent && event.data && typeof event.data.slyc === "boolean") arm(event.data.slyc) }) })()</' + 'script>'
+let arm = null
+
+function heard(said) {
+  if ('armed' in said) state.picking = !!said.armed
+  if (!said.picked) return
+  const picked = said.picked
+  const source = current
+  let found = picked.id ? source.indexOf('id="' + picked.id + '"') : -1
+  for (let size = Math.min(40, picked.text.length); found < 0 && size >= 3; size = size >> 1) found = source.indexOf(picked.text.slice(0, size))
+  const files = picked.files.filter(function (url) { return String(url).startsWith('slyed://file/') }).map(function (url) { return decodeURIComponent(new URL(url).pathname) })
+  post({ remark: { trail: picked.trail, text: picked.text, html: picked.html, files: files, line: found < 0 ? 0 : source.slice(0, found).split('\n').length }, path: state.path })
+}
+
+function pin(on) {
+  const stage = document.querySelector('.mar-editor-frame-preview')
+  if (!stage) return
+  if (state.kind === 'html') {
+    const frame = stage.querySelector('iframe')
+    if (frame && frame.contentWindow) frame.contentWindow.postMessage({ slyc: on }, '*')
+    return
+  }
+  if (!arm) arm = probe(stage, heard, false)
+  arm(on)
+}
+
+window.addEventListener('message', function (event) {
+  const frame = document.querySelector('.mar-editor-frame-preview iframe')
+  if (frame && event.source === frame.contentWindow && event.data && event.data.slyc) heard(event.data.slyc)
+})
+
+document.addEventListener('keydown', function (event) {
+  if (event.key === 'Escape' && state.picking) pin(false)
+  if (event.key !== 'c' || event.metaKey || event.ctrlKey || event.altKey || state.picking || !state.kind || state.mode === 'code') return
+  if (event.target.isContentEditable || /^(input|textarea|select)$/.test(event.target.localName)) return
+  const stage = document.querySelector('.mar-editor-frame-preview')
+  if (!stage || !stage.matches(':hover')) return
+  event.preventDefault()
+  pin(true)
+})
+
+function drawn(source) {
+  const parsed = new DOMParser().parseFromString(source, 'image/svg+xml')
+  parsed.querySelectorAll('script, foreignObject').forEach(function (el) { el.remove() })
+  parsed.querySelectorAll('*').forEach(function (el) {
+    Array.from(el.attributes).forEach(function (a) { if (/^on/i.test(a.name) || /^\s*javascript:/i.test(a.value)) el.removeAttribute(a.name) })
+  })
+  return parsed.documentElement.localName === 'svg' ? parsed.documentElement.outerHTML : ''
+}
+
+const Zoomer = {
+  props: { pane: String },
+  setup(props) {
+    return function () {
+      const key = scope(props.pane)
+      const value = zooms[key] || 1
+      function step(by) {
+        zoom(props.pane, by)
+      }
+      return h('div', { class: 'zoomer', onMousedown: function (event) { event.preventDefault() } }, [
+        h('button', { title: 'Zoom out', onClick: function () { step(-0.1) } }, '−'),
+        h('button', { class: 'level', title: 'Zoom of ' + key.split('.').pop() + (props.pane === 'preview' ? ' previews' : ' files') + ', click to reset', onClick: function () { step(0) } }, Math.round(value * 100) + '%'),
+        h('button', { title: 'Zoom in', onClick: function () { step(0.1) } }, '+')
+      ])
+    }
+  }
+}
+
 const readout = ref('')
 const owl = (function () {
   const inner = /<svg x=[^>]*viewBox="0 0 1024\.000000 1024\.000000">([\s\S]*?)<\/svg>/.exec(icon)
@@ -743,12 +898,18 @@ window.slyc = {
     return true
   },
   settings(given) {
-    const set = Object.assign({ font: 'Roboto Mono', ligatures: true, smoothing: true, traces: true }, given)
+    const set = Object.assign({ font: 'Liga Roboto Mono', ligatures: true, smoothing: true, traces: true, accent: '#b4632f', read: '#56a8f5', edited: '#ef8221', wrote: '#6aab73' }, given)
     const root = document.documentElement.style
-    root.setProperty('--code-font', '"' + String(set.font).replace(/"/g, '') + '", ui-monospace, Menlo, monospace')
+    root.setProperty('--code-font', '"' + String(set.font).replace(/"/g, '') + '", "Roboto Mono", ui-monospace, Menlo, monospace')
     root.setProperty('--code-ligatures', set.ligatures ? 'common-ligatures discretionary-ligatures contextual' : 'none')
-    root.setProperty('--code-smoothing', set.smoothing ? 'antialiased' : 'auto')
+    root.setProperty('--code-smoothing', set.smoothing ? 'auto' : 'antialiased')
+    root.setProperty('--accent', set.accent)
+    root.setProperty('--trace-read', set.read)
+    root.setProperty('--trace-edited', set.edited)
+    root.setProperty('--trace-wrote', set.wrote)
     tracing = set.traces !== false
+    Object.keys(zooms).forEach(function (key) { if (typeof given[key] !== 'number') delete zooms[key] })
+    Object.keys(given).forEach(function (key) { if (/^zoom\.(code|preview)\./.test(key) && typeof given[key] === 'number') zooms[key] = given[key] })
     if (view) view.dispatch({ effects: retrace.of(null) })
     return true
   },
@@ -779,6 +940,7 @@ window.slyc = {
     state.url = doc.url || ''
     state.locked = !!doc.locked
     state.review = null
+    if (state.picking) pin(false)
     traced = []
     wanted = null
     state.kind = doc.media ? '' : /\.(md|markdown|mdx)$/i.test(doc.name) ? 'markdown' : /\.html?$/i.test(doc.name) ? 'html' : /\.svg$/i.test(doc.name) ? 'svg' : ''
@@ -835,6 +997,10 @@ window.slyc = {
   region(target) {
     return seek(target)
   },
+  zoom(step) {
+    zoom(state.media === 'image' || state.media === 'pdf' || (fronted === 'preview' && document.querySelector('.mar-editor-frame-preview')) ? 'preview' : 'code', step)
+    return true
+  },
   loose() {
     free = true
     requestAnimationFrame(centre)
@@ -874,17 +1040,17 @@ createApp({
           if (state.review) return h(Tree)
           if (state.media === 'video') return h('div', { class: 'media' }, h('video', { key: state.url, src: state.url, controls: true, autoplay: false }))
           if (state.media === 'audio') return h('div', { class: 'media' }, h('audio', { key: state.url, src: state.url, controls: true }))
-          if (state.media === 'image') return h('div', { class: 'media' }, h('img', { key: state.url, src: state.url }))
-          if (state.media === 'pdf') return h('iframe', { key: state.url, class: 'web', src: state.url })
-          if (state.sides && state.path) return h(Sides, { key: state.key + ':sides' })
+          if (state.media === 'image') return [h('div', { class: 'media' }, h('img', { key: state.url, src: state.url })), h(Zoomer, { pane: 'preview' })]
+          if (state.media === 'pdf') return [h('iframe', { key: state.url, class: 'web', src: state.url }), h(Zoomer, { pane: 'preview' })]
+          if (state.sides && state.path) return [h(Sides, { key: state.key + ':sides' }), h(Zoomer, { pane: 'code' })]
           return state.path
-            ? h(MarCode, { key: state.key, modelValue: state.text, language: state.language, fill: true, lineWrap: state.kind !== '', 'onUpdate:modelValue': changed, diagnostics: state.diagnostics, 'onUpdate:diagnostics': function (v) { state.diagnostics = v }, onVnodeMounted: function (node) { nextTick(function () { attach(node.component.exposed) }) } })
+            ? [h(MarCode, { key: state.key, modelValue: state.text, language: state.language, fill: true, lineWrap: state.kind !== '', 'onUpdate:modelValue': changed, diagnostics: state.diagnostics, 'onUpdate:diagnostics': function (v) { state.diagnostics = v }, onVnodeMounted: function (node) { nextTick(function () { attach(node.component.exposed) }) } }), h(Zoomer, { pane: 'code' })]
             : h(Idle)
         }
       }
-      if (state.kind === 'markdown') slots.preview = function () { return h('div', { class: 'preview' }, h(MarBlockReader, { key: state.path, modelValue: state.live, contentType: 'markdown' })) }
-      if (state.kind === 'html') slots.preview = function () { return h('iframe', { class: 'web', sandbox: 'allow-scripts', srcdoc: '<base href="slyed://file' + encodeURI(state.path.slice(0, state.path.lastIndexOf('/') + 1)) + '">' + state.live }) }
-      if (state.kind === 'svg') slots.preview = function () { return h('div', { class: 'media checker' }, h('img', { src: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(state.live) })) }
+      if (state.kind === 'markdown') slots.preview = function () { return [h('div', { class: 'preview' }, h(MarBlockReader, { key: state.path, modelValue: state.live, contentType: 'markdown' })), h(Zoomer, { pane: 'preview' })] }
+      if (state.kind === 'html') slots.preview = function () { return [h('iframe', { class: 'web', sandbox: 'allow-scripts', srcdoc: '<base href="slyed://file' + encodeURI(state.path.slice(0, state.path.lastIndexOf('/') + 1)) + '">' + framed + state.live }), h(Zoomer, { pane: 'preview' })] }
+      if (state.kind === 'svg') slots.preview = function () { return [state.picking ? h('div', { key: 'drawn', class: 'media checker', innerHTML: drawn(state.live) }) : h('div', { key: 'image', class: 'media checker' }, h('img', { src: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(state.live) })), h(Zoomer, { pane: 'preview' })] }
       return h(MarEditorFrame, { mode: state.kind ? state.mode : 'code', split: 'columns', diagnostics: state.diagnostics }, slots)
     }
   }

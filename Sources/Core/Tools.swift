@@ -25,7 +25,8 @@ enum Tools {
 		return 0
 	}
 
-	static let defaults: Json = ["font": "Roboto Mono", "ligatures": true, "smoothing": true, "traces": true]
+	static let defaults: Json = ["font": "Liga Roboto Mono", "ligatures": true, "smoothing": true, "traces": true, "accent": "#b4632f", "read": "#56a8f5", "edited": "#ef8221", "wrote": "#6aab73",
+		"agents": true, "meters": true, "stats": true, "warp": true, "width": 214.0, "scale": 1.1, "zoom": 1.2]
 
 	static func settings(_ args: [String]) -> Int32 {
 		var stored = Base.json(Base.settings)
@@ -33,7 +34,7 @@ enum Tools {
 			Base.say(Base.text(defaults.merging(stored) { _, set in set }, pretty: true))
 			return 0
 		}
-		guard let standard = defaults[key] else { return Base.fail("unknown setting \(key), one of " + defaults.keys.sorted().joined(separator: ", ")) }
+		guard let standard = defaults[key] ?? (key.hasPrefix("zoom.code.") || key.hasPrefix("zoom.preview.") ? 1.0 : nil) else { return Base.fail("unknown setting \(key), one of " + defaults.keys.sorted().joined(separator: ", ")) }
 		guard args.count > 1 else {
 			Base.say(Base.text(["value": stored[key] ?? standard]))
 			return 0
@@ -41,6 +42,12 @@ enum Tools {
 		if standard is Bool {
 			guard args[1] == "true" || args[1] == "false" else { return Base.fail("\(key) is true or false") }
 			stored[key] = args[1] == "true"
+		} else if standard is Double {
+			guard let number = Double(args[1]) else { return Base.fail("\(key) is a number") }
+			stored[key] = number
+		} else if (standard as? String)?.hasPrefix("#") == true {
+			guard args[1].range(of: "^#[0-9a-fA-F]{6}$", options: .regularExpression) != nil else { return Base.fail("\(key) is a colour as #rrggbb") }
+			stored[key] = args[1].lowercased()
 		} else {
 			stored[key] = args[1...].joined(separator: " ")
 		}
