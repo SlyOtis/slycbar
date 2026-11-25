@@ -17,7 +17,7 @@ let package = Package(
 		.target(name: "tray"),
 		.executableTarget(name: "slyed", dependencies: ["tray"]),
 		.executableTarget(name: "widget", swiftSettings: [.unsafeFlags(["-application-extension"])], linkerSettings: [.unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])]),
-		.testTarget(name: "StatuslineTests", dependencies: ["Statusline"]),
+		.testTarget(name: "StatuslineTests", dependencies: ["Statusline", "Space"]),
 	],
 	swiftLanguageModes: [.v5]
 )

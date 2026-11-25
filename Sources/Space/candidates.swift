@@ -185,6 +185,9 @@ extension Work {
 			}
 		}
 
+		let covered = nimon(held, opened, emit)
+		markers(builds, named, covered, opened, emit)
+
 		for avd in glob("\(home)/.android/avd", ".avd") {
 			let name = basename(avd, ".avd")
 			if pgrep(["-f", "avd \(name)"]) { continue }
@@ -310,6 +313,72 @@ extension Work {
 					}
 				}
 			}
+		}
+	}
+
+	static let chromium = ["Cache", "Code Cache", "GPUCache", "component_crx_cache", "GraphiteDawnCache", "DawnWebGPUCache", "Safe Browsing", "adblock_cache", "cache2", "startupCache", "OnDeviceHeadSuggestModel"]
+	static let rebuilt = ["cache", "chart", "data", "features", "bugs", "reviews", "network", "security", "prep", "test-results", "pr"]
+	static let signature = "Signature: 8a477f597d28d172789f06886806bc55"
+
+	func marked(_ dir: String) -> Bool {
+		guard let h = FileHandle(forReadingAtPath: dir + "/CACHEDIR.TAG") else { return false }
+		defer { try? h.close() }
+		return (try? h.read(upToCount: Work.signature.utf8.count)).map { String(decoding: $0, as: UTF8.self) } == Work.signature
+	}
+
+	func gone(_ paths: [String], _ why: String, _ group: String, _ opened: (String) -> Bool, _ emit: Emit) -> [String] {
+		let left = paths.filter { !opened($0) && !tracked($0) }
+		guard !left.isEmpty else { return [] }
+		let k = at(tabs(lines(sh("du", ["-skc"] + left, limit: limit).out).last ?? ""), 0)
+		guard whole(k) > 51200 else { return [] }
+		emit(left.count == 1 ? row("cache", k, "rm", left[0], why, group) : row("cache", k, "run", "rm -rf " + left.map { "\"\($0)\"" }.joined(separator: " "), why, group))
+		return left
+	}
+
+	func nimon(_ held: Set<String>, _ opened: (String) -> Bool, _ emit: Emit) -> [String] {
+		var covered: [String] = []
+		let base = home + "/.nimon"
+		let ls = { (dir: String) in ((try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []).sorted(by: before).map { dir + "/" + $0 } }
+		let names = Array(Work.chromium.flatMap { ["-name", $0, "-o"] }.dropLast())
+		for p in ls(base + "/profiles") where folder(p) {
+			let found = lines(sh("find", [p, "-maxdepth", "4", "-type", "d", "("] + names + [")", "-prune", "-print"]).out)
+			covered += gone(found, "browser caches of the nimon profile \(basename(p)), cookies and logins stay, rebuilt on the next page load", "browser caches", opened, emit)
+		}
+		let run = base + "/run"
+		let old = lines(sh("find", [run, "-maxdepth", "1", "-type", "f", "-name", "*.log", "-mtime", "+\(unused)"]).out)
+		if !old.isEmpty, !old.contains(where: { held.contains($0) }) {
+			let k = at(tabs(lines(sh("du", ["-skc"] + old, limit: limit).out).last ?? ""), 0)
+			emit(row("stale", k, "run", "find \"\(run)\" -maxdepth 1 -type f -name \"*.log\" -mtime +\(unused) -exec rm -f {} +", "\(old.count) nimon logs not written for \(unused) days", "tool caches"))
+		}
+		let roots = [base] + lines(sh("find", [
+			"-E", projects, "-maxdepth", "5", "(", "-type", "d", "-regex", ".*/(\(Work.artifacts)|\\.git)", "-prune", ")",
+			"-o", "-type", "d", "-name", ".nimon", "-print", "-prune",
+		]).out)
+		for root in roots {
+			for host in ls(root) where folder(host) && !["profiles", "run", "history", "plugin"].contains(basename(host)) {
+				var paths = Work.rebuilt.map { host + "/" + $0 }.filter(folder)
+				for rec in ls(host + "/recordings") where folder(rec + "/frames") && !(glob(rec, ".mp4") + glob(rec, ".gif")).isEmpty { paths.append(rec + "/frames") }
+				covered += gone(paths, "rebuildable nimon data of \(basename(host)) in \(root), shots, snapshots, downloads, storage and finished recordings stay", "tool caches", opened, emit)
+			}
+		}
+		return covered
+	}
+
+	func markers(_ builds: [(kb: String, state: String, dir: String)], _ named: Set<String>, _ covered: [String], _ opened: (String) -> Bool, _ emit: Emit) {
+		let skip = covered + builds.map { $0.dir } + named + ["\(home)/.cache", "\(home)/Library/Caches"]
+		let dots = [".nimon", ".cargo", ".gradle", ".bun", ".npm", ".m2", ".konan", ".expo"].map { home + "/" + $0 }.filter(folder)
+		var tags = lines(sh("find", [
+			"-E", projects, "-maxdepth", "6", "(", "-type", "d", "-regex", ".*/(\(Work.artifacts)|\\.git)", "-prune", ")",
+			"-o", "-type", "f", "-name", "CACHEDIR.TAG", "-print",
+		], limit: limit).out)
+		if !dots.isEmpty { tags += lines(sh("find", dots + ["-maxdepth", "5", "-type", "f", "-name", "CACHEDIR.TAG", "-print"], limit: limit).out) }
+		var kept: [String] = []
+		for d in Set(tags.map(dirname) + sizes.filter { whole($0.kb) > 102400 }.map { $0.path }).sorted() {
+			if skip.contains(where: { d == $0 || starts(d, $0 + "/") }) || kept.contains(where: { starts(d, $0 + "/") }) || exists(d + "/pyvenv.cfg") || !marked(d) { continue }
+			kept.append(d)
+			let k = known[d] ?? at(tabs(at(lines(size(d)), 0)), 0)
+			guard whole(k) > 102400, !loaded(d), !opened(d), !tracked(d) else { continue }
+			emit(row("cache", k, "rm", d, "\(basename(d)) in \(basename(dirname(d))) is marked CACHEDIR.TAG, no process holds a file in it, rebuilt by its tool", "tool caches"))
 		}
 	}
 
