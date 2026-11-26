@@ -86,24 +86,11 @@ final class Model: ObservableObject {
 	@Published var activating = ""
 	@Published var refreshing: Set<String> = []
 	@Published var going: Set<String> = []
-	@Published var armed = ""
 	@Published var closed: [String: Bool] = ["accounts": UserDefaults.standard.bool(forKey: "closed.accounts"), "resources": UserDefaults.standard.bool(forKey: "closed.resources")]
 	@Published var tip: Tip?
 	@Published var now = Date()
 	@Published var height = 0.0
 	var send: (Ask) -> Void = { _ in }
-	var disarm: Timer?
-
-	func arm(_ key: String) -> Bool {
-		if armed == key {
-			armed = ""
-			return true
-		}
-		armed = key
-		disarm?.invalidate()
-		disarm = Timer.scheduledTimer(withTimeInterval: 4, repeats: false) { [weak self] _ in self?.armed = "" }
-		return false
-	}
 
 	func toggle(_ group: String) {
 		closed[group] = !(closed[group] ?? false)
@@ -192,17 +179,15 @@ struct Track: View {
 
 struct Pill: View {
 	let title: String
-	let sure: Bool
 	let action: () -> Void
 
 	var body: some View {
 		Hover { over in
 			Button(action: action) {
 				Text(title)
-					.foregroundStyle(sure ? Color.white : over ? Ink.bad : Ink.dim)
+					.foregroundStyle(over ? Ink.bad : Ink.dim)
 					.padding(.horizontal, 8)
-					.background(Capsule().fill(sure ? Ink.bad : Color.clear))
-					.overlay(Capsule().strokeBorder(sure || over ? Ink.bad : Ink.line, lineWidth: 1))
+					.overlay(Capsule().strokeBorder(over ? Ink.bad : Ink.line, lineWidth: 1))
 					.contentShape(Capsule())
 			}
 			.buttonStyle(.plain).focusable(false)
@@ -215,18 +200,20 @@ struct Cross: View {
 	let ask: String?
 	let action: () -> Void
 
-	var body: some View {
+	var mark: some View {
 		Hover { over in
-			Button(action: action) {
-				if let ask {
-					Text(ask).font(.system(size: 10)).foregroundStyle(Color.white).padding(.horizontal, 8).background(Capsule().fill(Ink.bad))
-				} else {
-					Text("×").font(.system(size: 13)).foregroundStyle(over ? Ink.bad : Ink.dim).padding(.horizontal, 2).contentShape(Rectangle())
-				}
-			}
-			.buttonStyle(.plain).focusable(false)
+			Text("×").font(.system(size: 13)).foregroundStyle(over ? Ink.bad : Ink.dim).padding(.horizontal, 2).contentShape(Rectangle())
+				.onTapGesture(count: ask == nil ? 1 : 2, perform: action)
 		}
 		.fixedSize()
+	}
+
+	var body: some View {
+		if let ask {
+			mark.help(ask)
+		} else {
+			mark
+		}
 	}
 }
 
@@ -538,8 +525,15 @@ struct Item: View {
 		row.action == "kill" ? "kill -9 " + target : row.action == "rm" ? "rm -rf " + target : target
 	}
 
+	var pid: String {
+		if row.action == "kill" { return target }
+		guard type == "app" else { return "" }
+		let name = named(row, type).0
+		return NSWorkspace.shared.runningApplications.first { $0.localizedName == name }.map { String($0.processIdentifier) } ?? ""
+	}
+
 	var ask: String {
-		row.action == "kill" ? "kill?" : row.action == "rm" ? "remove?" : type == "app" ? "quit?" : "run?"
+		"Double click to " + (row.action == "kill" ? "kill" : row.action == "rm" ? "remove" : type == "app" ? "quit" : "run")
 	}
 
 	func use(_ label: String, _ value: String, _ none: Bool) -> some View {
@@ -559,6 +553,24 @@ struct Item: View {
 				}
 			}
 			.frame(maxWidth: .infinity, alignment: .leading)
+			if !pid.isEmpty {
+				Hover { over in
+					Button {
+						NSPasteboard.general.clearContents()
+						NSPasteboard.general.setString(pid, forType: .string)
+						model.tip = Tip(id: target, why: "Copied pid \(pid)", cmd: pid, box: box)
+					} label: {
+						Text(pid).font(.system(size: 10, design: .monospaced))
+							.foregroundStyle(over ? Ink.fg : Ink.dim)
+							.padding(.horizontal, 6)
+							.overlay(Capsule().strokeBorder(over ? Ink.fg : Ink.line, lineWidth: 1))
+							.contentShape(Capsule())
+					}
+					.buttonStyle(.plain).focusable(false)
+				}
+				.fixedSize()
+				.help("Copy pid \(pid)")
+			}
 			HStack(spacing: 0) {
 				if space {
 					use("size", size(row.kb ?? 0).isEmpty ? "–" : size(row.kb ?? 0), size(row.kb ?? 0).isEmpty)
@@ -567,10 +579,8 @@ struct Item: View {
 					use("mem", size(row.kb ?? 0).isEmpty ? "–" : size(row.kb ?? 0), false)
 				}
 			}
-			Cross(ask: model.armed == target ? ask : nil) {
-				if model.arm(target) {
-					model.free([target])
-				}
+			Cross(ask: ask) {
+				model.free([target])
 			}
 		}
 		.lineLimit(1)
@@ -628,16 +638,23 @@ struct Listed: View {
 		let kb = size(rows.reduce(0) { $0 + ($1.kb ?? 0) })
 		let cpu = rows.reduce(0) { $0 + ($1.cpu ?? 0) }
 		let total = type == "cpu" ? "" : [space ? kb : kb.isEmpty ? "" : kb + " mem", !space && cpu != 0 ? num(cpu) + "% cpu" : ""].filter { !$0.isEmpty }.joined(separator: " · ")
-		let sure = model.armed == "group " + part.id
 		return VStack(spacing: 4) {
 			HStack(spacing: 12) {
 				Text((part.id + (total.isEmpty ? "" : " · " + total)).uppercased()).tracking(0.6).lineLimit(1)
 				Spacer(minLength: 0)
-				Pill(title: sure ? "free \(rows.count)?" : "free all", sure: sure) {
-					guard model.arm("group " + part.id) else { return }
-					let all = (model.reading.resources?.rows ?? []) + (model.reading.space?.rows ?? [])
-					model.free(all.filter { $0.group == part.id }.compactMap { $0.target })
+				Hover { over in
+					Image(systemName: "trash")
+						.foregroundStyle(over ? Ink.bad : Ink.dim)
+						.padding(.horizontal, 8)
+						.overlay(Capsule().strokeBorder(over ? Ink.bad : Ink.line, lineWidth: 1))
+						.contentShape(Capsule())
+						.onTapGesture(count: 2) {
+							let all = (model.reading.resources?.rows ?? []) + (model.reading.space?.rows ?? [])
+							model.free(all.filter { $0.group == part.id }.compactMap { $0.target })
+						}
 				}
+				.fixedSize()
+				.help("Double click to free all \(rows.count)")
 			}
 			.font(.system(size: 10))
 			.foregroundStyle(Ink.dim)
@@ -662,7 +679,7 @@ struct Resources: View {
 	var body: some View {
 		let space = model.reading.space
 		Panel(model: model, id: "resources", title: "Resource management", panel: Color(red: 0.282, green: 0.463, blue: 0.839).opacity(0.13)) {
-			Pill(title: space?.scanning == true ? "scanning…" : "scan space", sure: false) { model.send(.space) }.help("Scan the disk for what can go")
+			Pill(title: space?.scanning == true ? "scanning…" : "scan space") { model.send(.space) }.help("Scan the disk for what can go")
 		} content: {
 			if model.closed["resources"] != true {
 				VStack(alignment: .leading, spacing: 4) {
