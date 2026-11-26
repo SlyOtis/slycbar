@@ -93,7 +93,7 @@ Keys: ⇧⌘R list or diff; ⌥⌘] and ⌥⌘[ next and previous change, or cha
 2. `slybar use <email>` switches the signed in Claude account. Only on the user's word.
 3. `slybar free <target>...` kills or removes a row the tray lists. Only on the user's word for that exact target.
 4. `slybar install` rebuilds and reinstalls the widget, the tray and Slyed, and makes Slyed the default for text and source files.
-5. `slybar plugin install` writes this plugin with its skills, the guard hook on SessionStart, PreToolUse, PostToolUse and ExitPlanMode, and the `slycbar` MCP server (`slybar mcp`, stdio) with `review_open`, `review_status` and `review_wait`; `slybar plugin status` says whether the installed one is current.
+5. `slybar plugin install` installs the skills, the guard hook and the `slycbar` MCP server (`slybar mcp`, stdio) with `review_open`, `review_status` and `review_wait` for the one host it finds, and lists the hosts when it finds several; `--claude`, `--codex`, `--gemini`, `--opencode`, `--desktop`, `--chatgpt` and `--antigravity` pick the host. Claude Code gets the plugin with the hook on SessionStart, PreToolUse, PostToolUse and ExitPlanMode; Codex and ChatGPT desktop get `~/.agents/skills`, `~/.codex/config.toml` and `~/.codex/hooks.json`; Gemini CLI an extension with its hooks; opencode and Antigravity the skills and the server; Claude Desktop the server. `slybar plugin status` says whether each installed host is current.
 
 ## Slyed
 

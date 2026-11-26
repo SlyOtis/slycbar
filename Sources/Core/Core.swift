@@ -1,7 +1,7 @@
 import Foundation
 
 public enum Core {
-	static let usage = "usage: slybar open|state|refresh [email]|use <email>|login|forget <email>|resources|scan|free <target>...|warp [email] [display]|changes <path> [display]|widget|edit <path> [line] [end]|review <plan.json|-> [status|wait [seconds]|put]|mcp|compare <path> <path>|server <path> [install]|settings [key [value]]|plugin install|status|install|guard|statusline|space <command>"
+	static let usage = "usage: slybar open|state|refresh [email]|use <email>|login|forget <email>|resources|scan|free <target>...|warp [email] [display]|changes <path> [display]|widget|edit <path> [line] [end]|review <plan.json|-> [status|wait [seconds]|put]|mcp|compare <path> <path>|server <path> [install]|settings [key [value]]|plugin install [--claude] [--codex] [--gemini] [--opencode] [--desktop] [--chatgpt] [--antigravity]|status|install|guard|statusline|space <command>"
 
 	public static func run(_ args: [String]) -> Int32 {
 		Base.prepare()
@@ -25,7 +25,7 @@ public enum Core {
 		case "mcp": return Review.mcp()
 		case "server": return Tools.server(rest)
 		case "settings": return Tools.settings(rest)
-		case "plugin": return Tools.plugin(rest.first ?? "status")
+		case "plugin": return Tools.plugin(rest)
 		case "guard": return Guard.run()
 		case "install": return Install.install()
 		default: return Base.fail(usage, 2)

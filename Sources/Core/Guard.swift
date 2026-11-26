@@ -4,7 +4,12 @@ import Space
 enum Guard {
 	static func run() -> Int32 {
 		let input = Base.parse(String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self)) ?? [:]
-		let event = input["hook_event_name"] as? String ?? ""
+		let named = input["hook_event_name"] as? String ?? ""
+		let gemini = named == "BeforeTool" || named == "AfterTool"
+		let event = named == "BeforeTool" ? "PreToolUse" : named == "AfterTool" ? "PostToolUse" : named
+		func deny(_ reason: String) -> String {
+			Base.text((gemini ? ["decision": "deny", "reason": reason] : ["hookSpecificOutput": ["hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason]]) as Json)
+		}
 		let tool = input["tool_name"] as? String ?? ""
 		let sid = input["session_id"] as? String ?? ""
 		let cwd = input["cwd"] as? String ?? ""
@@ -14,7 +19,7 @@ enum Guard {
 		texts += (fields["edits"] as? [Json] ?? []).compactMap { $0["new_string"] as? String }
 		let bytes = texts.reduce(0) { $0 + $1.utf8.count }
 		if event == "PreToolUse", tool == "ExitPlanMode", let reason = Review.gate(sid) {
-			Base.say(Base.text(["hookSpecificOutput": ["hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason]] as Json))
+			Base.say(deny(reason))
 			return 0
 		}
 		if event == "PreToolUse" {
@@ -25,7 +30,7 @@ enum Guard {
 			if !over.isEmpty {
 				if !path.isEmpty, checks.contains(where: { $0.name == "disk" && $0.over }) {
 					let reason = "slybar guard: writing \(path) is refused, \(over). Nothing is written until space is freed: run slybar space candidates | slybar space free and hand its groups to the user."
-					Base.say(Base.text(["hookSpecificOutput": ["hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason]] as Json))
+					Base.say(deny(reason))
 					return 0
 				}
 				let told = (Base.env["TMPDIR"] ?? "/tmp") + "/space-n-resources.told." + (sid.isEmpty ? "none" : sid)
@@ -33,7 +38,7 @@ enum Guard {
 				if Base.now - Base.modified(told) > minutes * 60 {
 					Base.write(told, "")
 					let context = "slybar guard: the machine is over its limit, \(over). Before starting more work run slybar space running | slybar space free for what can be killed and slybar space candidates | slybar space free for what frees storage, and hand the groups to the user as the space-n-resources skill says."
-					Base.say(Base.text(["hookSpecificOutput": ["hookEventName": "PreToolUse", "additionalContext": context]] as Json))
+					Base.say(Base.text(["hookSpecificOutput": ["hookEventName": named, "additionalContext": context]] as Json))
 				}
 			}
 			if !path.isEmpty {

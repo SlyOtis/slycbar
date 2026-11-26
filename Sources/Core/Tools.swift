@@ -111,25 +111,90 @@ enum Tools {
 		return "v1.0-" + sum.prefix(12)
 	}
 
-	static func plugin(_ action: String) -> Int32 {
+	static let hosts = ["claude", "codex", "gemini", "opencode", "desktop", "chatgpt", "antigravity"]
+	static let about = "Statusline, tray, widget, code editor and machine resources for Claude Code"
+
+	static func skills(_ dir: String) {
 		let fm = FileManager.default
-		let carried = version()
-		switch action {
-		case "install":
-			guard Base.run("claude", ["--version"]).code == 0 else { return Base.fail("claude is missing") }
-			try? fm.removeItem(atPath: Base.plugin + "/skills")
-			try? fm.createDirectory(atPath: Base.plugin + "/.claude-plugin", withIntermediateDirectories: true)
-			for skill in (try? fm.contentsOfDirectory(atPath: Base.here + "/skills")) ?? [] {
-				try? fm.createDirectory(atPath: Base.plugin + "/skills/" + skill, withIntermediateDirectories: true)
-				Base.write(Base.plugin + "/skills/" + skill + "/SKILL.md", Base.read(Base.here + "/skills/" + skill + "/SKILL.md"))
-			}
+		for skill in (try? fm.contentsOfDirectory(atPath: Base.here + "/skills")) ?? [] {
+			try? fm.removeItem(atPath: dir + "/skills/" + skill)
+			try? fm.createDirectory(atPath: dir + "/skills/" + skill, withIntermediateDirectories: true)
+			Base.write(dir + "/skills/" + skill + "/SKILL.md", Base.read(Base.here + "/skills/" + skill + "/SKILL.md"))
+		}
+	}
+
+	static func hooks(_ host: String) -> Json {
+		if host == "claude" {
 			let hook: Json = ["type": "command", "command": Base.bin, "args": ["guard"], "timeout": 5]
-			try? fm.createDirectory(atPath: Base.plugin + "/hooks", withIntermediateDirectories: true)
-			Base.write(Base.plugin + "/hooks/hooks.json", Base.text(["hooks": ["SessionStart": [["hooks": [hook]]],
+			return ["SessionStart": [["hooks": [hook]]],
 				"PreToolUse": [["matcher": "Edit|Write|MultiEdit|NotebookEdit", "hooks": [hook]], ["matcher": "Bash|mcp__.*|Agent|Task", "hooks": [hook]], ["matcher": "ExitPlanMode", "hooks": [hook]]],
-				"PostToolUse": [["matcher": "Bash|mcp__.*|Agent|Task", "hooks": [hook]]]]] as Json, pretty: true))
-			Base.write(Base.plugin + "/.mcp.json", Base.text(["mcpServers": ["slycbar": ["command": Base.bin, "args": ["mcp"]]]] as Json, pretty: true))
-			let about = "Statusline, tray, widget, code editor and machine resources for Claude Code"
+				"PostToolUse": [["matcher": "Bash|mcp__.*|Agent|Task", "hooks": [hook]]]]
+		}
+		let gemini = host == "gemini"
+		let hook: Json = ["type": "command", "command": Base.bin + " guard", "timeout": gemini ? 5000 : 5]
+		let write = gemini ? "write_file|replace" : "Edit|Write|apply_patch"
+		let run = gemini ? "run_shell_command|mcp_.*" : "Bash|mcp__.*|Agent"
+		return ["SessionStart": [["hooks": [hook]]],
+			(gemini ? "BeforeTool" : "PreToolUse"): [["matcher": write, "hooks": [hook]], ["matcher": run, "hooks": [hook]]],
+			(gemini ? "AfterTool" : "PostToolUse"): [["matcher": run, "hooks": [hook]]]]
+	}
+
+	static func found(_ host: String) -> Bool {
+		let fm = FileManager.default
+		switch host {
+		case "desktop": return fm.fileExists(atPath: Base.home + "/Library/Application Support/Claude")
+		case "chatgpt": return fm.fileExists(atPath: "/Applications/ChatGPT.app") || fm.fileExists(atPath: Base.home + "/Applications/ChatGPT.app")
+		case "antigravity": return Base.shell("command -v agy") == 0 || fm.fileExists(atPath: Base.home + "/.gemini/config")
+		default: return Base.shell("command -v " + host) == 0
+		}
+	}
+
+	static func table(_ path: String) {
+		var kept: [String] = []
+		var skip = false
+		for line in Base.read(path).split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+			let trimmed = line.trimmingCharacters(in: .whitespaces)
+			if trimmed.hasPrefix("[") {
+				skip = trimmed == "[mcp_servers.slycbar]" || trimmed.hasPrefix("[mcp_servers.slycbar.")
+			}
+			if !skip {
+				kept.append(line)
+			}
+		}
+		var body = kept.joined(separator: "\n").trimmingCharacters(in: .newlines)
+		if !body.isEmpty {
+			body += "\n\n"
+		}
+		body += "[mcp_servers.slycbar]\ncommand = " + Base.text([Base.bin]).dropFirst().dropLast() + "\nargs = [\"mcp\"]\n"
+		try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+		Base.write(path, body)
+	}
+
+	static func merge(_ path: String, _ change: (inout Json) -> Void) -> Bool {
+		let text = Base.read(path)
+		var all: Json = [:]
+		if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+			guard let read = Base.parse(text) else { return false }
+			all = read
+		}
+		change(&all)
+		try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+		Base.write(path, Base.text(all, pretty: true) + "\n")
+		return true
+	}
+
+	static func install(_ host: String, _ carried: String) -> Int32 {
+		let fm = FileManager.default
+		let server: Json = ["command": Base.bin, "args": ["mcp"]]
+		switch host {
+		case "claude":
+			guard Base.run("claude", ["--version"]).code == 0 else { return Base.fail("claude is missing") }
+			try? fm.createDirectory(atPath: Base.plugin + "/.claude-plugin", withIntermediateDirectories: true)
+			try? fm.removeItem(atPath: Base.plugin + "/skills")
+			skills(Base.plugin)
+			try? fm.createDirectory(atPath: Base.plugin + "/hooks", withIntermediateDirectories: true)
+			Base.write(Base.plugin + "/hooks/hooks.json", Base.text(["hooks": hooks(host)] as Json, pretty: true))
+			Base.write(Base.plugin + "/.mcp.json", Base.text(["mcpServers": ["slycbar": server]] as Json, pretty: true))
 			Base.write(Base.plugin + "/.claude-plugin/plugin.json", Base.text(["name": "slycbar", "version": carried, "description": about, "author": ["name": "Slytech"], "skills": "./skills/"] as Json, pretty: true))
 			Base.write(Base.plugin + "/.claude-plugin/marketplace.json", Base.text(["name": "slycbar", "description": "The slycbar plugin this checkout carries.", "owner": ["name": "Slytech"],
 				"plugins": [["name": "slycbar", "description": about, "source": "./", "version": carried]]] as Json, pretty: true))
@@ -141,13 +206,112 @@ enum Tools {
 			}
 			Base.say("installed the slycbar plugin \(carried) from \(Base.plugin)")
 			return 0
+		case "codex", "chatgpt":
+			skills(Base.home + "/.agents")
+			table(Base.home + "/.codex/config.toml")
+			let path = Base.home + "/.codex/hooks.json"
+			let merged = merge(path) { all in
+				var events = all["hooks"] as? Json ?? [:]
+				for (event, groups) in hooks(host) {
+					let kept = (events[event] as? [Json] ?? []).filter { group in
+						!(group["hooks"] as? [Json] ?? []).contains { ($0["command"] as? String ?? "").hasPrefix(Base.bin + " ") }
+					}
+					events[event] = kept + (groups as? [Json] ?? [])
+				}
+				all["hooks"] = events
+			}
+			guard merged else { return Base.fail("\(path) is not json and is left as it is") }
+		case "gemini":
+			guard Base.shell("command -v gemini") == 0 else { return Base.fail("gemini is missing") }
+			let dir = Base.home + "/.slycbar/gemini"
+			try? fm.createDirectory(atPath: dir + "/hooks", withIntermediateDirectories: true)
+			skills(dir)
+			Base.write(dir + "/hooks/hooks.json", Base.text(["hooks": hooks(host)] as Json, pretty: true))
+			Base.write(dir + "/gemini-extension.json", Base.text(["name": "slycbar", "version": String(carried.dropFirst()), "description": about, "mcpServers": ["slycbar": server]] as Json, pretty: true))
+			Base.run("gemini", ["extensions", "uninstall", "slycbar"])
+			guard Base.run("gemini", ["extensions", "install", dir, "--consent"]).code == 0 else { return Base.fail("gemini extensions install \(dir) failed") }
+		case "opencode":
+			let dir = Base.home + "/.config/opencode"
+			skills(dir)
+			let path = dir + (fm.fileExists(atPath: dir + "/opencode.json") || !fm.fileExists(atPath: dir + "/opencode.jsonc") ? "/opencode.json" : "/opencode.jsonc")
+			let merged = merge(path) { all in
+				var mcp = all["mcp"] as? Json ?? [:]
+				var servers = mcp["servers"] as? Json ?? [:]
+				servers["slycbar"] = ["type": "local", "command": [Base.bin, "mcp"]] as Json
+				mcp["servers"] = servers
+				all["mcp"] = mcp
+			}
+			guard merged else { return Base.fail("\(path) is not plain json and is left as it is, add mcp.servers.slycbar there by hand") }
+		case "desktop":
+			let path = Base.home + "/Library/Application Support/Claude/claude_desktop_config.json"
+			let merged = merge(path) { all in
+				var servers = all["mcpServers"] as? Json ?? [:]
+				servers["slycbar"] = server
+				all["mcpServers"] = servers
+			}
+			guard merged else { return Base.fail("\(path) is not json and is left as it is") }
+		case "antigravity":
+			let dir = Base.home + "/.gemini/config"
+			skills(dir)
+			let path = dir + "/mcp_config.json"
+			let merged = merge(path) { all in
+				var servers = all["mcpServers"] as? Json ?? [:]
+				servers["slycbar"] = server
+				all["mcpServers"] = servers
+			}
+			guard merged else { return Base.fail("\(path) is not json and is left as it is") }
+		default:
+			return Base.fail("no host is \(host)", 2)
+		}
+		_ = merge(Base.home + "/.slycbar/hosts.json") { $0[host] = carried }
+		Base.say("installed slycbar \(carried) for \(host)")
+		return 0
+	}
+
+	static func plugin(_ args: [String]) -> Int32 {
+		let carried = version()
+		let usage = "usage: slybar plugin install [" + hosts.map { "--" + $0 }.joined(separator: "] [") + "]|status"
+		switch args.first ?? "status" {
+		case "install":
+			var picked = args.dropFirst().map { String($0.dropFirst(2)) }
+			guard args.dropFirst().allSatisfy({ $0.hasPrefix("--") }), picked.allSatisfy(hosts.contains) else { return Base.fail(usage, 2) }
+			if picked.isEmpty {
+				let found = hosts.filter(Tools.found)
+				let flags = "pass " + hosts.map { "--" + $0 }.joined(separator: ", ") + " to pick"
+				guard !found.isEmpty else { return Base.fail("none of \(hosts.joined(separator: ", ")) is found on this machine, \(flags)") }
+				picked = found
+				if found.count > 1 {
+					guard isatty(0) != 0, isatty(2) != 0 else { return Base.fail("\(found.joined(separator: ", ")) are installed, \(flags)", 2) }
+					for (at, host) in found.enumerated() {
+						FileHandle.standardError.write(Data("\(at + 1)  \(host)\n".utf8))
+					}
+					FileHandle.standardError.write(Data("install for which, numbers separated by spaces, or all: ".utf8))
+					let words = (readLine() ?? "").replacingOccurrences(of: ",", with: " ").split(separator: " ").map(String.init)
+					if !words.contains("all") {
+						picked = words.compactMap { Int($0) }.filter { $0 >= 1 && $0 <= found.count }.map { found[$0 - 1] }
+						guard !picked.isEmpty, picked.count == words.count else { return Base.fail("no host was picked, \(flags)", 2) }
+					}
+				}
+			}
+			for host in picked {
+				let code = install(host, carried)
+				if code != 0 { return code }
+			}
+			return 0
 		case "status":
-			guard let installed = Base.json(Base.plugin + "/.claude-plugin/plugin.json")["version"] as? String else { return Base.fail("the slycbar plugin is not installed, run slybar plugin install") }
-			guard installed == carried else { return Base.fail("the installed plugin is \(installed), this checkout carries \(carried), run slybar plugin install") }
-			Base.say("the slycbar plugin \(carried) is current")
+			var installed = Base.json(Base.home + "/.slycbar/hosts.json")
+			if let version = Base.json(Base.plugin + "/.claude-plugin/plugin.json")["version"] as? String {
+				installed["claude"] = version
+			}
+			guard !installed.isEmpty else { return Base.fail("the slycbar plugin is not installed, run slybar plugin install") }
+			for host in hosts {
+				guard let version = installed[host] as? String else { continue }
+				guard version == carried else { return Base.fail("the plugin installed for \(host) is \(version), this checkout carries \(carried), run slybar plugin install --\(host)") }
+				Base.say("the slycbar plugin \(carried) is current for \(host)")
+			}
 			return 0
 		default:
-			return Base.fail("usage: slybar plugin install|status", 2)
+			return Base.fail(usage, 2)
 		}
 	}
 }
