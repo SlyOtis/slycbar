@@ -103,6 +103,95 @@ enum Warp {
 		return 0
 	}
 
+	static func impact(_ display: String) -> Int32 {
+		let fm = FileManager.default
+		let desktop = Base.tray + "/desktop.jpg"
+		let fill = display == "fill"
+		let busy = Base.cache + "/impact.lock"
+		if fill {
+			if Base.now - Base.modified(busy) > 900 {
+				try? fm.removeItem(atPath: busy)
+			}
+			guard (try? fm.createDirectory(atPath: busy, withIntermediateDirectories: false)) != nil else { return 0 }
+		} else if display != "live" {
+			try? fm.removeItem(atPath: desktop)
+			Base.run("/usr/sbin/screencapture", ["-x", "-D", display, "-t", "jpg", desktop])
+		}
+		let store = Base.cache + "/impact.json"
+		var known = Base.json(store)
+		let root = Base.claude + "/projects"
+		var files: [(changed: Double, size: Int, path: String)] = []
+		var since = Base.now
+		if let walk = fm.enumerator(atPath: root) {
+			for case let name as String in walk where name.hasSuffix(".jsonl") {
+				let attributes = try? fm.attributesOfItem(atPath: root + "/" + name)
+				since = min(since, (attributes?[.creationDate] as? Date)?.timeIntervalSince1970 ?? since)
+				files.append(((attributes?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0, (attributes?[.size] as? NSNumber)?.intValue ?? 0, root + "/" + name))
+			}
+		}
+		files.sort { $0.changed > $1.changed }
+		let keys = ["input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens"]
+		let counted = try? NSRegularExpression(pattern: "\"(" + keys.joined(separator: "|") + ")\":(\\d+)")
+		let named = try? NSRegularExpression(pattern: "\"id\":\"(msg_[^\"]+)\"")
+		let needle = Data("\"output_tokens\"".utf8)
+		let newline = UInt8(ascii: "\n")
+		let end = fill ? Double.infinity : Base.now + 6
+		var left = 0
+		var sum = [String: Double]()
+		for file in files {
+			let stamp = "\(file.size) \(Int(file.changed))"
+			var entry = known[file.path] as? Json ?? [:]
+			if entry["stamp"] as? String != stamp {
+				guard Base.now < end, let data = try? Data(contentsOf: URL(fileURLWithPath: file.path), options: .mappedIfSafe) else {
+					left += 1
+					continue
+				}
+				var seen = Set<String>()
+				var found = [String: Double]()
+				var from = data.startIndex
+				while from < data.endIndex {
+					let to = data[from...].firstIndex(of: newline) ?? data.endIndex
+					let line = data[from..<to]
+					from = to < data.endIndex ? to + 1 : to
+					guard line.range(of: needle) != nil, let raw = String(data: line, encoding: .utf8), raw.contains("\"type\":\"assistant\"") else { continue }
+					let whole = NSRange(raw.startIndex..., in: raw)
+					if let hit = named?.firstMatch(in: raw, range: whole), let range = Range(hit.range(at: 1), in: raw), !seen.insert(String(raw[range])).inserted { continue }
+					var taken = Set<String>()
+					for hit in counted?.matches(in: raw, range: whole) ?? [] {
+						guard let key = Range(hit.range(at: 1), in: raw), let value = Range(hit.range(at: 2), in: raw), taken.insert(String(raw[key])).inserted else { continue }
+						found[String(raw[key]), default: 0] += Double(raw[value]) ?? 0
+					}
+				}
+				entry = ["stamp": stamp]
+				for key in keys {
+					entry[key] = found[key] ?? 0
+				}
+				known[file.path] = entry
+			}
+			for key in keys {
+				sum[key, default: 0] += (entry[key] as? NSNumber)?.doubleValue ?? 0
+			}
+		}
+		let live = Set(files.map { $0.path })
+		Base.write(store, Base.text(known.filter { live.contains($0.key) }))
+		if fill {
+			try? fm.removeItem(atPath: busy)
+			return 0
+		}
+		if left > 0 {
+			let rest = Process()
+			rest.executableURL = URL(fileURLWithPath: Bundle.main.executablePath ?? CommandLine.arguments[0])
+			rest.arguments = ["impact", "fill"]
+			rest.standardOutput = FileHandle.nullDevice
+			rest.standardError = FileHandle.nullDevice
+			try? rest.run()
+		}
+		let audio = ["mp3", "m4a", "aac", "wav"].map { Base.tray + "/impact." + $0 }.first { fm.fileExists(atPath: $0) } ?? ""
+		Base.say(Base.text(["name": Accounts.name(Accounts.active()), "desktop": fm.fileExists(atPath: desktop) ? desktop : "", "audio": audio, "faces": ((try? fm.contentsOfDirectory(atPath: Base.tray + "/faces")) ?? []).filter { $0.hasSuffix(".jpg") || $0.hasSuffix(".png") }.sorted().map { Base.tray + "/faces/" + $0 }, "since": Int(since), "logs": files.count, "left": left,
+			"input": sum["input_tokens"] ?? 0, "write": sum["cache_creation_input_tokens"] ?? 0, "read": sum["cache_read_input_tokens"] ?? 0, "output": sum["output_tokens"] ?? 0] as Json))
+		return 0
+	}
+
 	static func changes(_ target: String, _ display: String) -> Int32 {
 		let fm = FileManager.default
 		var isDir: ObjCBool = false

@@ -296,10 +296,41 @@ struct Agent: Identifiable {
 	let last: String
 	let questions: [String]
 	let sid: String
+	let logs: [String]
 
 	var color: Color {
 		status == "busy" ? Color(red: 0.95, green: 0.65, blue: 0.42) : status == "idle" ? Color.white.opacity(0.4) : Color(red: 0.92, green: 0.74, blue: 0.33)
 	}
+}
+
+struct Card: Identifiable, Equatable {
+	let id: String
+	let repo: String
+	let number: String
+	let title: String
+	let kind: String
+	let status: String
+	let tree: String
+	let session: String
+	let updated: Date
+	let questions: Int
+}
+
+struct Feed: Identifiable, Equatable {
+	let id: String
+	let group: String
+	let name: String
+	let detail: String
+	let model: String
+	let busy: Bool
+	let lines: [String]
+	let questions: [String]
+	let trees: Set<String>
+}
+
+final class Live: ObservableObject {
+	@Published var cards: [Card] = []
+	@Published var feeds: [Feed] = []
 }
 
 struct Node: Identifiable {
@@ -391,6 +422,12 @@ final class Model: ObservableObject {
 	@Published var diff = false
 	@Published var sides = false
 	@Published var gitOpen = false
+	@Published var boardOpen = false
+	@Published var setOpen = false
+	@Published var set: [String: Any] = [:]
+	var store: (String, String) -> Void = { _, _ in }
+	let live = Live()
+	var stream: () -> Void = {}
 	@Published var branch = ""
 	@Published var tracking = ""
 	@Published var state = ""
@@ -509,6 +546,7 @@ final class Model: ObservableObject {
 		changed()
 	}
 	var warp: () -> Void = {}
+	var impact: () -> Void = {}
 	@Published var tracked = false
 	@Published var status = "" {
 		didSet {
@@ -563,6 +601,44 @@ final class Model: ObservableObject {
 	}
 	var dragged = 0.0
 	var comment: (String) -> Void = { _ in }
+	var audit: (Agent) -> Void = { _ in }
+	struct Talk {
+		let agent: Agent?
+		let title: String
+		let detail: String
+		let file: String
+		var lines: [String]
+	}
+
+	struct Kit {
+		var top = ""
+		var file = ""
+		var tasks: [(path: String, id: String, title: String, status: String)] = []
+		var agents: [String] = []
+		var skills: [String] = []
+		var memory: [(line: Int, kind: String, asked: String, answer: String)] = []
+	}
+
+	@Published var talk: Talk?
+	@Published var reply = ""
+	@Published var kitOpen = false
+	@Published var kit = Kit()
+	var converse: (Agent?, String, String, String) -> Void = { _, _, _, _ in }
+	var openKit: () -> Void = {}
+
+	func tell() {
+		let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard let agent = talk?.agent, !text.isEmpty else { return }
+		reply = ""
+		answer(agent, text)
+	}
+
+	func board() {
+		boardOpen.toggle()
+		if boardOpen {
+			stream()
+		}
+	}
 	@Published var asking: Agent?
 	var answer: (Agent, String) -> Void = { _, _ in }
 	@Published var counts: [String: (Int, Int)] = [:]
@@ -1248,6 +1324,13 @@ struct Markdown: View {
 			out[range].foregroundColor = Color(red: 0.34, green: 0.66, blue: 0.96)
 			out[range].font = .system(size: 11.5, design: .monospaced)
 		}
+		let plain = String(out.characters)
+		for found in plain.matches(of: #/\b[Qq]\d+\b/#) {
+			let lower = out.index(out.startIndex, offsetByCharacters: plain.distance(from: plain.startIndex, to: found.range.lowerBound))
+			let upper = out.index(lower, offsetByCharacters: found.output.count)
+			out[lower..<upper].foregroundColor = Color(red: 0.94, green: 0.51, blue: 0.13)
+			out[lower..<upper].inlinePresentationIntent = .stronglyEmphasized
+		}
 		guard !base.isEmpty else { return out }
 		var allowed = CharacterSet.alphanumerics
 		allowed.insert(charactersIn: "-_.~/")
@@ -1340,6 +1423,7 @@ struct Hunk: Identifiable {
 	var status = "pending"
 	var text = ""
 	var sent = false
+	var why = ""
 
 	var label: String { "\(change + 1).\(part)" }
 
@@ -1406,6 +1490,168 @@ struct Pill: View {
 		}
 		.buttonStyle(.plain).focusable(false)
 		.onHover { over = $0 }
+	}
+}
+
+struct Board: View {
+	let model: Model
+	@ObservedObject var live: Live
+	@Namespace private var moves
+	@State private var grown: Set<String> = []
+	static let order = ["draft", "open", "doing", "staged", "review", "blocked", "done"]
+	static let asked = Color(red: 0.92, green: 0.74, blue: 0.33)
+
+	func head(_ title: String, _ count: Int) -> some View {
+		HStack(spacing: 6) {
+			Text(title.uppercased()).font(.system(size: 10, weight: .medium)).tracking(0.6).foregroundStyle(Ink.dim)
+			Text("\(count)").font(.system(size: 10)).monospacedDigit().foregroundStyle(Ink.dim)
+			Spacer(minLength: 0)
+		}
+	}
+
+	func card(_ card: Card, _ workers: [Feed], _ repos: Int) -> some View {
+		let asking = card.questions > 0 || workers.contains { !$0.questions.isEmpty }
+		return VStack(alignment: .leading, spacing: 3) {
+			HStack(spacing: 5) {
+				Text("#" + card.number).font(.system(size: 10, design: .monospaced)).foregroundStyle(Ink.accent)
+				Text(card.kind).font(.system(size: 10)).foregroundStyle(Ink.dim)
+				if repos > 1 {
+					Text((card.repo as NSString).lastPathComponent).font(.system(size: 10)).foregroundStyle(Ink.dim).lineLimit(1)
+				}
+				Spacer(minLength: 2)
+				ForEach(workers) { feed in
+					Circle().fill(feed.busy ? Color(red: 0.95, green: 0.65, blue: 0.42) : Color.white.opacity(0.4)).frame(width: 6, height: 6).tip(feed.name + " · " + feed.detail)
+				}
+				if asking {
+					Image(systemName: "questionmark.bubble.fill").font(.system(size: 10)).foregroundStyle(Board.asked).tip("Open questions")
+				}
+			}
+			Text(card.title).font(.system(size: 12)).lineLimit(3).fixedSize(horizontal: false, vertical: true)
+			if !card.tree.isEmpty {
+				Label(card.tree, systemImage: "arrow.triangle.branch").font(.system(size: 10)).foregroundStyle(Ink.dim).lineLimit(1).truncationMode(.middle)
+			}
+		}
+		.padding(8)
+		.frame(maxWidth: .infinity, alignment: .leading)
+		.background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.05)))
+		.overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(asking ? Board.asked.opacity(0.6) : Ink.line, lineWidth: 1))
+		.matchedGeometryEffect(id: card.id, in: moves)
+		.contentShape(Rectangle())
+		.onTapGesture {
+			let agent = model.agents.first { $0.name == card.session } ?? workers.first.flatMap { feed in model.agents.first { $0.sid == feed.group } }
+			model.converse(agent, "#" + card.number + " " + card.title, agent?.logs.first ?? "", card.id)
+		}
+		.tip(card.id + (card.session.isEmpty ? "" : " · " + card.session))
+		.contextMenu { Button("Copy Path") { copy(card.id) } }
+	}
+
+	func cell(_ feed: Feed) -> some View {
+		let wide = grown.contains(feed.id)
+		return VStack(alignment: .leading, spacing: 4) {
+			HStack(spacing: 6) {
+				Circle().fill(feed.busy ? Color(red: 0.95, green: 0.65, blue: 0.42) : Color.white.opacity(0.4)).frame(width: 6, height: 6)
+				Text(feed.name).font(.system(size: 11, weight: .semibold)).lineLimit(1)
+				Text(feed.detail).font(.system(size: 11)).foregroundStyle(Ink.dim).lineLimit(1).truncationMode(.tail)
+				Spacer(minLength: 2)
+				if !feed.model.isEmpty {
+					Text(feed.model.replacingOccurrences(of: "claude-", with: "")).font(.system(size: 10)).foregroundStyle(Ink.accent).lineLimit(1).fixedSize()
+						.padding(.horizontal, 5).background(Capsule().fill(Ink.accent.opacity(0.16))).tip("Model " + feed.model)
+				}
+				if !feed.questions.isEmpty {
+					Label("\(feed.questions.count)", systemImage: "questionmark.bubble.fill").labelStyle(.titleAndIcon).font(.system(size: 10)).foregroundStyle(Board.asked)
+						.tip(feed.questions.joined(separator: "\n"))
+				}
+				Act(name: wide ? "chevron.up" : "chevron.down", tip: wide ? "Collapse" : "Expand the work log") {
+					if wide { grown.remove(feed.id) } else { grown.insert(feed.id) }
+				}
+			}
+			ScrollView {
+				VStack(alignment: .leading, spacing: 1) {
+					ForEach(Array(feed.lines.enumerated()), id: \.offset) { _, line in
+						Text(line.hasPrefix("›") ? Markdown(text: line).inline(line) : AttributedString(line)).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(line.hasPrefix("›") ? Ink.fg : Ink.dim).lineLimit(wide ? nil : 1).truncationMode(.tail).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+					}
+				}
+				.frame(maxWidth: .infinity, alignment: .leading)
+			}
+			.defaultScrollAnchor(.bottom)
+			.scrollIndicators(.never)
+			.frame(minHeight: 80, maxHeight: wide ? 520 : 150)
+			if wide {
+				ForEach(feed.questions, id: \.self) { asked in
+					Text(asked).font(.system(size: 11)).foregroundStyle(Board.asked).fixedSize(horizontal: false, vertical: true)
+				}
+			}
+		}
+		.padding(8)
+		.background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.04)))
+		.overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(feed.questions.isEmpty ? Ink.line : Board.asked.opacity(0.6), lineWidth: 1))
+		.contentShape(Rectangle())
+		.onTapGesture { model.converse(model.agents.first { $0.sid == feed.group }, feed.name + (feed.detail.isEmpty ? "" : " · " + feed.detail), feed.id, "") }
+	}
+
+	var body: some View {
+		let lanes = Dictionary(grouping: live.cards, by: \.status)
+		let present = Set(lanes.keys)
+		let repos = Set(live.cards.map(\.repo)).count
+		let cells = Dictionary(grouping: live.feeds, by: \.group)
+		let working = live.feeds.reduce(into: [String: [Feed]]()) { found, feed in feed.trees.forEach { found[$0, default: []].append(feed) } }
+		let shown = Board.order.filter { ["draft", "doing", "review", "blocked", "done"].contains($0) || present.contains($0) } + present.subtracting(Board.order).sorted()
+		let groups = live.feeds.map(\.group).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+		VStack(spacing: 0) {
+			HStack(alignment: .top, spacing: 8) {
+				ForEach(shown, id: \.self) { status in
+					let cards = lanes[status] ?? []
+					VStack(alignment: .leading, spacing: 6) {
+						head(status, cards.count)
+						ScrollView {
+							LazyVStack(spacing: 6) { ForEach(cards) { card($0, working[$0.tree] ?? [], repos) } }
+						}
+						.scrollIndicators(.never)
+					}
+					.padding(8)
+					.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+					.background(RoundedRectangle(cornerRadius: 10).fill(Ink.pane))
+				}
+			}
+			.padding(.bottom, 8)
+			.frame(maxHeight: .infinity)
+			ScrollView(.horizontal) {
+				HStack(alignment: .top, spacing: 8) {
+					ForEach(groups, id: \.self) { group in
+						let agent = model.agents.first { $0.sid == group }
+						VStack(alignment: .leading, spacing: 6) {
+							HStack(spacing: 6) {
+								Circle().fill(agent?.color ?? Ink.dim).frame(width: 7, height: 7)
+								Text(agent?.name ?? group).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+								Text(model.short(agent?.dir ?? "")).font(.system(size: 11)).foregroundStyle(Ink.dim).lineLimit(1).truncationMode(.head)
+								Spacer(minLength: 0)
+							}
+							.contentShape(Rectangle())
+							.onTapGesture {
+								if let agent {
+									model.converse(agent, agent.name, agent.logs.first ?? "", "")
+								}
+							}
+							ScrollView {
+								VStack(spacing: 8) {
+									ForEach(cells[group] ?? []) { cell($0) }
+								}
+								.background(Thin())
+							}
+							.scrollIndicators(.visible)
+						}
+						.padding(8)
+						.frame(maxHeight: .infinity, alignment: .top)
+						.background(RoundedRectangle(cornerRadius: 10).fill(Ink.pane))
+						.containerRelativeFrame(.horizontal, count: min(max(groups.count, 1), 4), spacing: 8)
+					}
+				}
+			}
+			.scrollIndicators(.never)
+			.frame(maxHeight: .infinity)
+		}
+		.foregroundStyle(Ink.fg)
+		.animation(.spring(response: 0.45, dampingFraction: 0.82), value: live.cards.map { $0.id + $0.status })
 	}
 }
 
@@ -1584,10 +1830,280 @@ struct GitPanel: View {
 	}
 }
 
+struct Tuning: View {
+	@ObservedObject var model: Model
+	@State private var typed: [String: String] = [:]
+
+	func head(_ title: String) -> some View {
+		Text(title.uppercased()).font(.system(size: 10, weight: .medium)).tracking(0.6).foregroundStyle(Ink.dim).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
+	}
+
+	func flag(_ key: String) -> some View {
+		Toggle(isOn: Binding(get: { model.set[key] as? Bool ?? true }, set: { model.store(key, $0 ? "true" : "false") })) {
+			Text(key).font(.system(size: 12)).frame(maxWidth: .infinity, alignment: .leading)
+		}
+		.toggleStyle(.switch).controlSize(.mini)
+	}
+
+	func field(_ key: String) -> some View {
+		let stored = model.set[key] as? String ?? ""
+		let rgb = stored.hasPrefix("#") ? Int(stored.dropFirst(), radix: 16) : nil
+		return HStack(spacing: 8) {
+			Text(key).font(.system(size: 12))
+			Spacer(minLength: 8)
+			if let rgb {
+				RoundedRectangle(cornerRadius: 4).fill(Color(red: Double(rgb >> 16 & 255) / 255, green: Double(rgb >> 8 & 255) / 255, blue: Double(rgb & 255) / 255)).frame(width: 16, height: 16)
+			}
+			TextField(stored, text: Binding(get: { typed[key] ?? stored }, set: { typed[key] = $0 }))
+				.textFieldStyle(.plain).font(.system(size: 12, design: .monospaced)).multilineTextAlignment(.trailing)
+				.padding(.horizontal, 6).padding(.vertical, 3).frame(width: rgb == nil ? 200 : 90)
+				.background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.06)))
+				.onSubmit {
+					if let text = typed.removeValue(forKey: key), !text.isEmpty {
+						model.store(key, text)
+					}
+				}
+		}
+	}
+
+	func dial(_ key: String, _ range: ClosedRange<Double>, _ step: Double) -> some View {
+		let value = (model.set[key] as? NSNumber)?.doubleValue ?? range.lowerBound
+		return HStack(spacing: 8) {
+			Text(key).font(.system(size: 12))
+			Spacer(minLength: 8)
+			Text(String(format: step < 1 ? "%.2f" : "%.0f", value)).font(.system(size: 11)).monospacedDigit().foregroundStyle(Ink.dim)
+			Stepper("", value: Binding(get: { value }, set: { model.store(key, String(format: "%.2f", min(range.upperBound, max(range.lowerBound, $0)))) }), step: step).labelsHidden().controlSize(.small)
+		}
+	}
+
+	var body: some View {
+		VStack(spacing: 0) {
+			HStack(spacing: 8) {
+				Image(systemName: "gearshape").font(.system(size: 13)).foregroundStyle(Ink.accent)
+				Text("Settings").font(.system(size: 14, weight: .semibold))
+				Text("~/.slycbar/settings.json").font(.system(size: 11)).foregroundStyle(Ink.dim)
+				Spacer(minLength: 8)
+				Icon(name: "xmark", tip: "Close, esc") { model.setOpen = false }
+			}
+			.padding(.horizontal, 14).padding(.vertical, 10)
+			Rectangle().fill(Ink.line).frame(height: 1)
+			VStack(alignment: .leading, spacing: 6) {
+				head("Editor")
+				field("font")
+				flag("ligatures")
+				flag("smoothing")
+				flag("traces")
+				dial("zoom", 0.5...3, 0.05)
+				head("Colours")
+				field("accent")
+				field("read")
+				field("edited")
+				field("wrote")
+				head("Sidebar")
+				flag("agents")
+				flag("meters")
+				flag("stats")
+				flag("warp")
+				dial("width", 140...900, 10)
+				dial("scale", 0.7...2, 0.05)
+			}
+			.padding(.horizontal, 14).padding(.bottom, 14)
+		}
+		.foregroundStyle(Ink.fg)
+		.frame(width: 440)
+		.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+		.overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Ink.line, lineWidth: 1))
+		.shadow(color: .black.opacity(0.45), radius: 28, y: 10)
+	}
+}
+
+struct Talking: View {
+	@ObservedObject var model: Model
+	@FocusState private var focus: Bool
+
+	var body: some View {
+		if let talk = model.talk {
+			VStack(spacing: 0) {
+				HStack(spacing: 8) {
+					Circle().fill(talk.agent?.color ?? Ink.dim).frame(width: 9, height: 9)
+					Text(talk.title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+					Text(talk.detail).font(.system(size: 11)).foregroundStyle(Ink.dim).lineLimit(1).truncationMode(.head)
+					Spacer(minLength: 8)
+					if !talk.file.isEmpty {
+						Icon(name: "square.and.pencil", tip: "Open the task file in the editor") {
+							model.talk = nil
+							model.boardOpen = false
+							model.jump(talk.file, nil)
+						}
+					}
+					Icon(name: "xmark", tip: "Close, esc") { model.talk = nil }
+				}
+				.padding(.horizontal, 14).padding(.vertical, 10)
+				Rectangle().fill(Ink.line).frame(height: 1)
+				ScrollView {
+					VStack(alignment: .leading, spacing: 10) {
+						ForEach(Array(talk.lines.enumerated()), id: \.offset) { _, line in
+							if line.hasPrefix("· ") {
+								Text(line).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(Ink.dim).textSelection(.enabled)
+							} else {
+								Markdown(text: line, base: talk.agent?.dir ?? "")
+							}
+						}
+					}
+					.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(Thin())
+				}
+				.defaultScrollAnchor(.bottom)
+				.scrollIndicators(.visible)
+				if let agent = talk.agent {
+					Rectangle().fill(Ink.line).frame(height: 1)
+					if !agent.questions.isEmpty {
+						ScrollView(.horizontal) {
+							HStack(spacing: 5) {
+								Text("open").font(.system(size: 10)).foregroundStyle(Ink.dim)
+								ForEach(agent.questions, id: \.self) { entry in
+									let parts = entry.components(separatedBy: "\t")
+									Button(action: { model.reply += (model.reply.isEmpty || model.reply.hasSuffix(" ") ? "" : " ") + parts[0].lowercased() + " " }) {
+										Text(parts[0]).font(.system(size: 11, weight: .bold)).foregroundStyle(Color.white).padding(.horizontal, 7).padding(.vertical, 2).background(Capsule().fill(Ink.accent))
+									}
+									.buttonStyle(.plain).focusable(false).tip(parts.count > 1 ? parts[1] : "")
+								}
+							}
+							.padding(.horizontal, 12).padding(.top, 8)
+						}
+						.scrollIndicators(.never)
+					}
+					HStack(alignment: .bottom, spacing: 8) {
+						TextField("Answer " + agent.name + ", ↩ sends", text: $model.reply, axis: .vertical)
+							.textFieldStyle(.plain).font(.system(size: 13)).lineLimit(1...8).focused($focus)
+							.onSubmit { model.tell() }
+						Icon(name: "paperplane.fill", on: true, tip: "Send") { model.tell() }
+					}
+					.padding(12)
+				}
+			}
+			.foregroundStyle(Ink.fg)
+			.frame(width: 900, height: 720)
+			.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+			.overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Ink.line, lineWidth: 1))
+			.shadow(color: .black.opacity(0.45), radius: 28, y: 10)
+			.environment(\.openURL, OpenURLAction { model.follow($0) })
+			.onAppear { focus = true }
+		}
+	}
+}
+
+struct KitPanel: View {
+	@ObservedObject var model: Model
+
+	func head(_ title: String) -> some View {
+		Text(title.uppercased()).font(.system(size: 10, weight: .medium)).tracking(0.6).foregroundStyle(Ink.dim).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
+	}
+
+	func open(_ path: String, _ line: Int?) {
+		model.kitOpen = false
+		model.boardOpen = false
+		model.jump(path, line)
+	}
+
+	func row(_ title: String, _ detail: String, _ path: String) -> some View {
+		Hover { over in
+			HStack(spacing: 6) {
+				Text(title).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
+				Spacer(minLength: 2)
+				Text(detail).font(.system(size: 10)).foregroundStyle(Ink.dim).lineLimit(1)
+			}
+			.padding(.horizontal, 4).padding(.vertical, 3)
+			.background(RoundedRectangle(cornerRadius: 6).fill(over ? Ink.hover : Color.clear))
+			.contentShape(Rectangle())
+			.onTapGesture { open(path, nil) }
+		}
+		.tip(path)
+	}
+
+	var body: some View {
+		let kit = model.kit
+		VStack(spacing: 0) {
+			HStack(spacing: 8) {
+				Image(systemName: "shippingbox").font(.system(size: 13)).foregroundStyle(Ink.accent)
+				Text("Project").font(.system(size: 14, weight: .semibold))
+				Text(model.short(kit.top) + "/.claude").font(.system(size: 11)).foregroundStyle(Ink.dim).lineLimit(1).truncationMode(.head)
+				Spacer(minLength: 8)
+				Icon(name: "xmark", tip: "Close, esc") { model.kitOpen = false }
+			}
+			.padding(.horizontal, 14).padding(.vertical, 10)
+			Rectangle().fill(Ink.line).frame(height: 1)
+			HStack(alignment: .top, spacing: 0) {
+				VStack(alignment: .leading, spacing: 3) {
+					head("Tasks · \(kit.tasks.count)")
+					ScrollView {
+						VStack(spacing: 0) {
+							ForEach(Array(kit.tasks.enumerated()), id: \.offset) { _, task in
+								row("#" + task.id + " " + task.title, task.status, task.path)
+							}
+						}
+					}
+					.scrollIndicators(.never)
+				}
+				.padding(10).frame(width: 340)
+				Rectangle().fill(Ink.line).frame(width: 1)
+				VStack(alignment: .leading, spacing: 3) {
+					head("Agents · \(kit.agents.count)")
+					ForEach(kit.agents, id: \.self) { path in
+						row(((path as NSString).lastPathComponent as NSString).deletingPathExtension, "", path)
+					}
+					head("Skills · \(kit.skills.count)")
+					ScrollView {
+						VStack(spacing: 0) {
+							ForEach(kit.skills, id: \.self) { path in
+								row(((path as NSString).deletingLastPathComponent as NSString).lastPathComponent, "", path)
+							}
+						}
+					}
+					.scrollIndicators(.never)
+					head("Facts")
+					row("slyed.json", FileManager.default.fileExists(atPath: kit.top + "/.claude/slyed.json") ? "" : "not written, run slyed-init", kit.top + "/.claude/slyed.json")
+				}
+				.padding(10).frame(width: 250)
+				Rectangle().fill(Ink.line).frame(width: 1)
+				VStack(alignment: .leading, spacing: 3) {
+					head("Memory · \(kit.memory.count)")
+					ScrollView {
+						LazyVStack(alignment: .leading, spacing: 2) {
+							ForEach(Array(kit.memory.enumerated()), id: \.offset) { _, entry in
+								Hover { over in
+									VStack(alignment: .leading, spacing: 1) {
+										HStack(spacing: 6) {
+											Text(entry.kind).font(.system(size: 9, weight: .semibold)).foregroundStyle(Ink.accent)
+											Text(entry.asked).font(.system(size: 12, weight: .semibold)).lineLimit(2)
+										}
+										Text(entry.answer).font(.system(size: 11)).foregroundStyle(Ink.dim).lineLimit(3)
+									}
+									.padding(.horizontal, 4).padding(.vertical, 4)
+									.frame(maxWidth: .infinity, alignment: .leading)
+									.background(RoundedRectangle(cornerRadius: 6).fill(over ? Ink.hover : Color.clear))
+									.contentShape(Rectangle())
+									.onTapGesture { open(kit.file, entry.line) }
+								}
+							}
+						}
+						.background(Thin())
+					}
+					.scrollIndicators(.visible)
+				}
+				.padding(10).frame(maxWidth: .infinity)
+			}
+		}
+		.foregroundStyle(Ink.fg)
+		.frame(width: 1060, height: 620)
+		.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+		.overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Ink.line, lineWidth: 1))
+		.shadow(color: .black.opacity(0.45), radius: 28, y: 10)
+	}
+}
+
 struct Verdict: View {
 	let accept: Bool
 	let on: Bool
-	var small = false
 	let tip: String
 	let action: () -> Void
 	@State private var over = false
@@ -1597,11 +2113,10 @@ struct Verdict: View {
 		let red = Color(red: 1, green: 0.49, blue: 0.43)
 		let filled = accept || on
 		Button(action: action) {
-			Label(accept ? (on ? "Accepted" : "Accept") : (on ? "Rejected" : "Reject"), systemImage: accept ? (on ? "checkmark.circle.fill" : "checkmark") : (on ? "xmark.circle.fill" : "xmark"))
-				.labelStyle(.titleAndIcon)
-				.font(.system(size: small ? 11 : 12, weight: accept ? .bold : .semibold))
+			Image(systemName: accept ? "checkmark" : "xmark")
+				.font(.system(size: accept ? 14 : 11, weight: .bold))
 				.foregroundStyle(filled ? Color.white : over ? red : Ink.fg)
-				.padding(.horizontal, small ? 8 : 11).frame(height: small ? 20 : 26)
+				.frame(width: accept ? 56 : 26, height: accept ? 30 : 26)
 				.background(Capsule().fill(accept ? green.opacity(on ? 1 : over ? 0.95 : 0.8) : on ? red : Color.clear))
 				.overlay(Capsule().strokeBorder(filled ? Color.white.opacity(on ? 0.5 : 0) : over ? red : Ink.dim.opacity(0.6), lineWidth: 1))
 				.contentShape(Capsule())
@@ -1652,12 +2167,9 @@ struct Feedback: View {
 				Text(model.phase + (model.round > 1 ? " · round \(model.round)" : "") + " · \(model.decided)/\(model.hunks.count)").font(.system(size: 10, weight: .semibold)).monospacedDigit().foregroundStyle(Ink.dim)
 					.padding(.horizontal, 7).padding(.vertical, 1).background(Capsule().fill(Ink.hover))
 			}
-			if !step.why.isEmpty || !step.notes.isEmpty || !model.remarks.isEmpty {
+			if !step.notes.isEmpty || !model.remarks.isEmpty {
 				ScrollView {
 					VStack(alignment: .leading, spacing: 4) {
-						if !step.why.isEmpty {
-							Markdown(text: step.why, base: model.folder).foregroundStyle(Ink.fg.opacity(0.85))
-						}
 						ForEach(step.notes) { Remark(note: $0, base: model.folder) }
 						ForEach(model.remarks) { Remark(note: $0, base: model.folder) }
 					}
@@ -1673,17 +2185,18 @@ struct Feedback: View {
 					.padding(.horizontal, 4).padding(.top, 4)
 					.frame(maxHeight: model.deep > 0 ? .infinity : nil, alignment: .topLeading)
 				HStack(spacing: 2) {
-					Icon(name: "chevron.up", size: 15, tip: "Previous change, ⌥⌘[") { model.walk(false) }
-					Icon(name: "chevron.down", size: 15, tip: "Next change, ⌥⌘]") { model.walk(true) }
+					Icon(name: "chevron.up", size: 15, tip: "Previous change, ⌥↑") { model.walk(false) }
+					Icon(name: "chevron.down", size: 15, tip: "Next change, ⌥↓") { model.walk(true) }
 					Spacer(minLength: 6)
-					Verdict(accept: false, on: hunk.status == "rejected", small: true, tip: "Reject \(hunk.label) with the comment, ⌥⌘N") { model.judge(model.hunk, "rejected") }
-					Verdict(accept: true, on: hunk.status == "accepted", small: true, tip: "Accept \(hunk.label) with the comment, ⌥⌘Y") { model.judge(model.hunk, "accepted") }
+					Verdict(accept: false, on: hunk.status == "rejected", tip: "Reject \(hunk.label) with the comment, ⌥↩") { model.judge(model.hunk, "rejected") }
+						.padding(.trailing, 6)
+					Verdict(accept: true, on: hunk.status == "accepted", tip: "Accept \(hunk.label) with or without the comment, ⌘↩") { model.judge(model.hunk, "accepted") }
 				}
 			}
 			.frame(maxHeight: model.deep > 0 ? .infinity : nil)
 			.padding(8)
-			.background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
-			.overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Ink.accent.opacity(0.35), lineWidth: 1))
+			.background(RoundedRectangle(cornerRadius: 12).fill(LinearGradient(colors: [Color.white.opacity(0.1), Color.white.opacity(0.03)], startPoint: .top, endPoint: .bottom)))
+			.overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(LinearGradient(colors: [Color.white.opacity(0.35), Ink.accent.opacity(0.3), Color.white.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1))
 		}
 		.foregroundStyle(Ink.fg)
 		.padding(10)
@@ -1692,8 +2205,10 @@ struct Feedback: View {
 		.background(GeometryReader { box in
 			Color.clear.onAppear { model.depth = box.size.height }.onChange(of: box.size.height) { _, tall in model.depth = tall }
 		})
-		.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-		.overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Ink.line, lineWidth: 1))
+		.background(RoundedRectangle(cornerRadius: 14).fill(LinearGradient(colors: [Color.white.opacity(0.12), Color.white.opacity(0.02), Ink.accent.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)))
+		.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+		.overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(LinearGradient(colors: [Color.white.opacity(0.45), Color.white.opacity(0.06), Color.white.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1))
+		.shadow(color: .black.opacity(0.35), radius: 16, y: 6)
 		.environment(\.openURL, OpenURLAction { model.follow($0) })
 		.overlay(alignment: .top) {
 			Color.clear.frame(height: 7)
@@ -2061,7 +2576,14 @@ struct Shell: View {
 
 	var agents: some View {
 		VStack(alignment: .leading, spacing: 4) {
-			Text("AGENTS").font(.system(size: 10 * model.scale)).tracking(0.6).foregroundStyle(Ink.dim).padding(.horizontal, 4)
+			HStack(spacing: 0) {
+				Text("AGENTS").font(.system(size: 10 * model.scale)).tracking(0.6).foregroundStyle(Ink.dim).padding(.horizontal, 4)
+				Spacer(minLength: 0)
+				Icon(name: "square.grid.3x1.below.line.grid.1x2", size: 10 * model.scale, tip: "Board: the tasks and the live work of every agent, esc closes") {
+					model.board()
+				}
+				.padding(.trailing, -5)
+			}
 				VStack(alignment: .leading, spacing: 1) {
 					ForEach(model.agents) { agent in
 						HStack(spacing: 6) {
@@ -2069,6 +2591,7 @@ struct Shell: View {
 							Text(agent.name).fontWeight(.semibold).lineLimit(1)
 							Text(agent.status).foregroundStyle(Ink.dim)
 							Spacer(minLength: 0)
+							Act(name: "checklist", tip: "Review what " + agent.name + " wrote, in the order it wrote it") { model.audit(agent) }
 						}
 						.font(.system(size: 12 * model.scale))
 						.padding(.horizontal, 4).padding(.top, 4)
@@ -2154,6 +2677,12 @@ struct Shell: View {
 					Pill(title: "accept", on: true) { model.decide(true) }
 					Pill(title: "reject", on: false) { model.decide(false) }
 				}
+				if !model.plan.isEmpty {
+					Icon(name: "checklist", tip: "Review, ⇧⌘R") { model.resume() }
+				}
+				if !model.agents.isEmpty {
+					Icon(name: "square.grid.3x1.below.line.grid.1x2", tip: "Board: the tasks and the live work of every agent, esc closes") { model.board() }
+				}
 				if model.tracked {
 					Icon(name: "plus.forwardslash.minus", on: model.diff, tip: "Inline diff against " + model.base + ", ⇧⌘D", action: model.flip)
 					Icon(name: "arrow.left.arrow.right", on: model.sides, tip: "Side by side with " + model.base, action: model.flipSides)
@@ -2161,6 +2690,7 @@ struct Shell: View {
 				if !model.top.isEmpty {
 					Icon(name: "arrow.triangle.branch", on: model.gitOpen, tip: "Git: stage, commit, branches, merge, cherry-pick, stash, ⌘9") { model.openGit() }
 				}
+				Icon(name: "shippingbox", on: model.kitOpen, tip: "Project: its tasks, agents, skills and memory") { model.openKit() }
 			}
 			.padding(.trailing, 8)
 			.frame(height: 34)
@@ -2226,8 +2756,6 @@ struct Shell: View {
 						if !model.meters.isEmpty, !model.hidden.contains("meters") {
 							Color.clear.frame(height: 4)
 							Meters(meters: model.meters, account: model.account, scale: model.scale)
-								.background(RoundedRectangle(cornerRadius: 9).fill(Ink.accent.opacity(0.14)))
-								.overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Ink.accent.opacity(0.4), lineWidth: 1))
 						}
 					}
 					.frame(width: model.width)
@@ -2242,11 +2770,17 @@ struct Shell: View {
 				}
 				VStack(spacing: 0) {
 					VStack(spacing: 6) {
-						Web(view: web).frame(maxWidth: .infinity, maxHeight: .infinity)
-							.clipShape(RoundedRectangle(cornerRadius: 10))
-							.overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Ink.line, lineWidth: 1).opacity(model.preview && model.mode == "both" ? 0 : 1))
-							.shadow(color: .black.opacity(0.4), radius: 9, y: 2)
-						if model.reviewing {
+						ZStack {
+							Web(view: web).frame(maxWidth: .infinity, maxHeight: .infinity)
+								.clipShape(RoundedRectangle(cornerRadius: 10))
+								.overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Ink.line, lineWidth: 1).opacity(model.preview && model.mode == "both" ? 0 : 1))
+								.shadow(color: .black.opacity(0.4), radius: 9, y: 2)
+								.opacity(model.boardOpen ? 0 : 1).allowsHitTesting(!model.boardOpen)
+							if model.boardOpen {
+								Board(model: model, live: model.live).transition(.opacity)
+							}
+						}
+						if model.reviewing, !model.boardOpen {
 							Feedback(model: model)
 						}
 					}
@@ -2273,6 +2807,13 @@ struct Shell: View {
 						Text(model.cursor)
 						Icon(name: "wand.and.stars", tip: "Format the file", action: model.format)
 						Hover { over in
+							Button(action: model.impact) {
+								Text("☢").font(.system(size: 13)).foregroundStyle(over ? Ink.fg : Ink.dim).contentShape(Rectangle())
+							}
+							.buttonStyle(.plain).focusable(false)
+						}
+						.tip("What your total token usage costs the planet in energy and water")
+						Hover { over in
 							Button(action: model.warp) {
 								Text("WARP").font(.custom("Impact", size: 11)).tracking(1.5).foregroundStyle(over ? Ink.fg : Ink.dim).contentShape(Rectangle())
 							}
@@ -2287,9 +2828,32 @@ struct Shell: View {
 			}
 		}
 		.foregroundStyle(Ink.fg)
+		.background(alignment: .leading) {
+			if model.side {
+				Ink.accent.opacity(0.14).frame(width: model.width + 9)
+			}
+		}
 		.background(Color(red: 0.031, green: 0.039, blue: 0.071).opacity(0.34))
 		.overlay(alignment: .top) {
 			ZStack(alignment: .top) {
+			if model.kitOpen {
+				ZStack(alignment: .top) {
+					Color.black.opacity(0.25).contentShape(Rectangle()).onTapGesture { model.kitOpen = false }
+					KitPanel(model: model).movable().padding(.top, 60).transition(.scale(scale: 0.95, anchor: .top).combined(with: .opacity))
+				}
+			}
+			if model.talk != nil {
+				ZStack(alignment: .top) {
+					Color.black.opacity(0.4).contentShape(Rectangle()).onTapGesture { model.talk = nil }
+					Talking(model: model).movable().padding(.top, 50).transition(.scale(scale: 0.95, anchor: .top).combined(with: .opacity))
+				}
+			}
+			if model.setOpen {
+				ZStack(alignment: .top) {
+					Color.black.opacity(0.25).contentShape(Rectangle()).onTapGesture { model.setOpen = false }
+					Tuning(model: model).movable().padding(.top, 60).transition(.scale(scale: 0.95, anchor: .top).combined(with: .opacity))
+				}
+			}
 			if model.gitOpen {
 				ZStack(alignment: .top) {
 					Color.black.opacity(0.25).contentShape(Rectangle()).onTapGesture { model.gitOpen = false }
@@ -2522,6 +3086,13 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 	var rolled = 0.0
 	var picked: [String: Any] = [:]
 	var parsed: [Int: (String, Agent)] = [:]
+	var streaming = false
+	var streamed: [String: (Int, Feed)] = [:]
+	var worktrees: [String: String] = [:]
+	var listed = Date.distantPast
+	let reader = DispatchQueue(label: "no.slytech.slyed.stream", qos: .utility)
+	var carded: [String: (Date, Card)] = [:]
+	var primaries: [String: String] = [:]
 	var swiped = 0.0
 	var fired = false
 	var pending: Int?
@@ -2599,6 +3170,8 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 						found[at].text = note.text
 						found[at].sent = note.sent
 					}
+					let whys = self.model.steps[hunk.change].why.split(separator: "\n").compactMap { $0.trimmingCharacters(in: .whitespaces).firstMatch(of: #/^\d+[.)]\s+(.*)$/#).map { String($0.1) } }
+					found[at].why = whys.isEmpty ? self.model.steps[hunk.change].why : hunk.part <= whys.count ? whys[hunk.part - 1] : ""
 					let added = hunk.rows.filter { $0["t"] as? String == "+" }.count
 					let removed = hunk.rows.filter { $0["t"] as? String == "-" }.count
 					self.model.steps[hunk.change].added = (hunk.part == 1 ? 0 : self.model.steps[hunk.change].added) + added
@@ -2680,18 +3253,21 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 
 	func tree(_ at: Int) -> [String: Any] {
 		["at": at, "files": model.steps.enumerated().map { n, step -> [String: Any] in
-			["n": n + 1, "name": (step.path as NSString).lastPathComponent, "path": model.short(step.path), "title": step.title, "why": step.why, "added": step.added, "removed": step.removed,
-				"hunks": model.hunks.filter { $0.change == n }.map { ["id": $0.id, "label": $0.label, "status": $0.status, "text": $0.text, "rows": $0.rows] as [String: Any] }]
+			["n": n + 1, "name": (step.path as NSString).lastPathComponent, "path": model.short(step.path), "title": step.title, "added": step.added, "removed": step.removed,
+				"hunks": model.hunks.filter { $0.change == n }.map { ["id": $0.id, "label": $0.label, "status": $0.status, "text": $0.text, "why": $0.why, "rows": $0.rows] as [String: Any] }]
 		}]
 	}
 
-	func anchor(_ path: String) {
+	func anchor(_ path: String, top: Bool = false) {
 		var dir = (path as NSString).deletingLastPathComponent
 		while dir.count > 1, !FileManager.default.fileExists(atPath: dir) {
 			dir = (dir as NSString).deletingLastPathComponent
 		}
 		model.stepping = true
-		if let held = model.roots.filter({ path.hasPrefix($0 + "/") }).max(by: { $0.count < $1.count }) {
+		let repo = top ? String(decoding: git(dir, ["rev-parse", "--show-toplevel"]).out, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) : ""
+		if !repo.isEmpty {
+			model.adopt(repo)
+		} else if let held = model.roots.filter({ path.hasPrefix($0 + "/") }).max(by: { $0.count < $1.count }) {
 			model.root = held
 		} else {
 			let found = git(dir, ["rev-parse", "--show-toplevel"])
@@ -2757,7 +3333,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 			self.model.comparing = ""
 			self.model.region = ""
 			self.win.title = self.model.hunks[at].label + " " + step.title
-			self.anchor(step.path)
+			self.anchor(step.path, top: true)
 			self.model.hunk = at
 			self.model.step = self.model.hunks[at].change
 			self.model.draft = self.model.hunks[at].text
@@ -2848,9 +3424,188 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 			$0["state"] = state
 			$0["sent"] = stamp
 		}
+		annotate()
+		let said = body["live"] as? Bool == true ? relay() : approved ? "every change is accepted, the review is back with Claude Code" : "the review is back with Claude Code"
 		note("comments.log", "review " + state + " " + model.plan)
 		leave()
-		model.status = approved ? "every change is accepted, the review is back with Claude Code" : "the review is back with Claude Code"
+		model.status = said
+	}
+
+	func audit(_ agent: Agent) {
+		let sid = agent.sid
+		let ref = "refs/slyed/" + sid
+		let folder = cache + "/live/" + sid
+		let path = folder + "/plan.json"
+		DispatchQueue.global().async {
+			let fm = FileManager.default
+			func text(_ args: [String], _ at: String) -> String { String(decoding: git(at, args).out, as: UTF8.self) }
+			let top = text(["rev-parse", "--show-toplevel"], agent.dir).trimmingCharacters(in: .whitespacesAndNewlines)
+			let ids = top.isEmpty ? [] : text(["rev-list", "--reverse", ref, "--not", "--branches", "--remotes"], top).split(separator: "\n").map(String.init)
+			let old = (fm.contents(atPath: path).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] })?["changes"] as? [[String: Any]] ?? []
+			try? fm.createDirectory(atPath: folder, withIntermediateDirectories: true)
+			var changes: [[String: Any]] = []
+			for id in ids {
+				let why = text(["log", "-1", "--format=%B", id], top).trimmingCharacters(in: .whitespacesAndNewlines)
+				guard why != "base" else { continue }
+				for name in text(["diff-tree", "--no-commit-id", "--name-only", "-r", "-z", id], top).split(separator: "\0").map(String.init) {
+					if let kept = old.first(where: { $0["commit"] as? String == id && $0["path"] as? String == top + "/" + name }) {
+						changes.append(kept)
+						continue
+					}
+					let stem = folder + "/" + id.prefix(10) + "." + (name as NSString).lastPathComponent
+					let before = git(top, ["show", id + "^:" + name])
+					let after = git(top, ["show", id + ":" + name])
+					fm.createFile(atPath: stem + ".base", contents: before.code == 0 ? before.out : Data())
+					fm.createFile(atPath: stem, contents: after.code == 0 ? after.out : Data())
+					changes.append(["commit": id, "title": String((why.split(separator: "\n").first ?? Substring(name)).prefix(90)), "why": why, "path": top + "/" + name, "base": stem + ".base", "proposed": stem, "status": "pending", "comments": [] as [Any]])
+				}
+			}
+			DispatchQueue.main.async {
+				guard !changes.isEmpty else {
+					self.model.status = agent.name + " has no snapshotted changes on " + ref
+					return
+				}
+				let plan: [String: Any] = ["title": agent.name + ", changes as written", "session": sid, "dir": top, "live": true, "state": "open", "round": 1, "changes": changes]
+				guard let data = try? JSONSerialization.data(withJSONObject: plan, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]), (try? data.write(to: URL(fileURLWithPath: path), options: .atomic)) != nil else {
+					self.model.status = "the review of " + agent.name + " was not written to " + self.model.short(path)
+					return
+				}
+				self.load(plan: path)
+			}
+		}
+	}
+
+	func annotate() {
+		let raw = body["changes"] as? [[String: Any]] ?? []
+		var marks: [String: (dir: String, said: [String])] = [:]
+		for hunk in model.hunks where hunk.change < raw.count {
+			guard let commit = raw[hunk.change]["commit"] as? String else { continue }
+			marks[commit, default: ((model.steps[hunk.change].path as NSString).deletingLastPathComponent, [])].said.append("\(hunk.part) " + hunk.status + (hunk.text.isEmpty ? "" : " " + hunk.text))
+		}
+		DispatchQueue.global().async {
+			for (commit, mark) in marks {
+				_ = git(mark.dir, ["notes", "--ref=slyed", "add", "-f", "-m", mark.said.joined(separator: "\n"), commit])
+			}
+		}
+	}
+
+	func relay() -> String {
+		let sid = body["session"] as? String ?? ""
+		let top = body["dir"] as? String ?? ""
+		let rejected = model.hunks.filter { $0.status == "rejected" }
+		var lines = ["Review from Slyed of the changes you wrote: \(model.hunks.count - rejected.count) accepted, \(rejected.count) rejected."]
+		for hunk in model.hunks {
+			let path = model.steps[hunk.change].path
+			let spot = (path.hasPrefix(top + "/") ? String(path.dropFirst(top.count + 1)) : path) + ":\(hunk.line)" + (hunk.end > hunk.line ? "-\(hunk.end)" : "")
+			if hunk.status == "rejected" || !hunk.text.isEmpty {
+				lines.append(hunk.status + " " + spot + (hunk.text.isEmpty ? "" : ": " + hunk.text))
+			}
+		}
+		if !rejected.isEmpty {
+			lines.append("Redo only the rejected spots.")
+		}
+		let message = lines.joined(separator: "\n")
+		slyed.copy(message)
+		if let holder = model.agents.first(where: { $0.sid == sid }), !rejected.isEmpty {
+			let body = lines.filter { $0.hasPrefix("rejected ") }.map { "- " + $0 }.joined(separator: "\n")
+			DispatchQueue.global().async { self.held(holder).forEach { self.minute($0, "Review", body) } }
+		}
+		guard let agent = model.agents.first(where: { $0.sid == sid }), !agent.socket.isEmpty else { return "the session is gone, the review is copied" }
+		return post(agent.socket, message) ? "the review is sent to " + agent.name : "not sent to " + agent.name + ", the review is copied"
+	}
+
+	func statements(_ log: String) -> [String] {
+		guard let handle = FileHandle(forReadingAtPath: log) else { return [] }
+		let size = handle.seekToEndOfFile()
+		handle.seek(toFileOffset: size > 2500000 ? size - 2500000 : 0)
+		let text = String(decoding: handle.readDataToEndOfFile(), as: UTF8.self)
+		handle.closeFile()
+		var found: [String] = []
+		for line in text.split(separator: "\n") where line.contains("\"type\":\"assistant\"") {
+			guard let entry = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else { continue }
+			for block in ((entry["message"] as? [String: Any])?["content"] as? [[String: Any]]) ?? [] {
+				if block["type"] as? String == "text", let said = block["text"] as? String, !said.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+					found.append(said)
+				}
+				if block["type"] as? String == "tool_use", let tool = block["name"] as? String {
+					let input = block["input"] as? [String: Any] ?? [:]
+					let subject = ["file_path", "notebook_path", "command", "pattern", "description", "url", "query", "prompt", "skill"].lazy.compactMap { input[$0] as? String }.first ?? ""
+					found.append("· " + tool + " " + (subject.split(separator: "\n").first.map(String.init) ?? "").prefix(220))
+				}
+			}
+		}
+		return Array(found.suffix(90))
+	}
+
+	func converse(_ agent: Agent?, _ title: String, _ log: String, _ file: String) {
+		model.reply = ""
+		model.talk = Model.Talk(agent: agent, title: title, detail: file.isEmpty ? model.short(agent?.dir ?? "") : model.short(file), file: file, lines: [])
+		DispatchQueue.global().async {
+			var lines: [String] = []
+			if !file.isEmpty {
+				let parts = self.decode(file).components(separatedBy: "\n---\n")
+				lines.append(parts.count > 1 ? parts.dropFirst().joined(separator: "\n---\n") : parts[0])
+			}
+			if !log.isEmpty {
+				lines += self.statements(log)
+			}
+			DispatchQueue.main.async {
+				guard self.model.talk?.title == title else { return }
+				self.model.talk?.lines = lines.isEmpty ? ["Nothing is read from this session yet."] : lines
+			}
+		}
+	}
+
+	func held(_ agent: Agent) -> [String] {
+		let first = String(decoding: git(agent.dir, ["worktree", "list", "--porcelain"]).out, as: UTF8.self).split(separator: "\n").first.map(String.init) ?? ""
+		guard first.hasPrefix("worktree ") else { return [] }
+		let dir = String(first.dropFirst(9)) + "/.claude/tasks"
+		return ((try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []).filter { $0.hasSuffix(".md") }.map { dir + "/" + $0 }.filter { path in
+			String(decoding: (FileManager.default.contents(atPath: path) ?? Data()).prefix(3000), as: UTF8.self).split(separator: "\n").contains { $0 == "session: " + agent.name }
+		}
+	}
+
+	func minute(_ file: String, _ heading: String, _ body: String) {
+		var text = decode(file)
+		guard !text.isEmpty, !body.isEmpty else { return }
+		if !text.contains("\n## " + heading + "\n") {
+			text += (text.hasSuffix("\n") ? "" : "\n") + "\n## " + heading + "\n\n"
+		}
+		text += body + "\n"
+		try? text.write(toFile: file, atomically: true, encoding: .utf8)
+	}
+
+	func loadKit() {
+		let base = top.isEmpty ? model.root : top
+		DispatchQueue.global().async {
+			let fm = FileManager.default
+			let dir = base + "/.claude"
+			var kit = Model.Kit()
+			kit.top = base
+			kit.file = dir + "/memory.jsonl"
+			func number(_ name: String) -> Int { Int(name.prefix { $0.isNumber }) ?? 0 }
+			for name in ((try? fm.contentsOfDirectory(atPath: dir + "/tasks")) ?? []).filter({ $0.hasSuffix(".md") }).sorted(by: { number($0) > number($1) }) {
+				let rows = String(decoding: (fm.contents(atPath: dir + "/tasks/" + name) ?? Data()).prefix(4000), as: UTF8.self).split(separator: "\n")
+				func field(_ key: String) -> String {
+					rows.first { $0.hasPrefix(key + ":") }.map { String($0.dropFirst(key.count + 1)).trimmingCharacters(in: .whitespaces) } ?? ""
+				}
+				kit.tasks.append((dir + "/tasks/" + name, field("id"), field("title"), field("status")))
+			}
+			kit.agents = ((try? fm.contentsOfDirectory(atPath: dir + "/agents")) ?? []).filter { $0.hasSuffix(".md") }.sorted().map { dir + "/agents/" + $0 }
+			kit.skills = ((try? fm.contentsOfDirectory(atPath: dir + "/skills")) ?? []).sorted().map { dir + "/skills/" + $0 + "/SKILL.md" }.filter { fm.fileExists(atPath: $0) }
+			for (n, line) in String(decoding: fm.contents(atPath: kit.file) ?? Data(), as: UTF8.self).split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+				guard let row = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else { continue }
+				kit.memory.append((n + 1, row["c"] as? String ?? "", row["q"] as? String ?? "", row["a"] as? String ?? ""))
+			}
+			DispatchQueue.main.async { self.model.kit = kit }
+		}
+	}
+
+	@objc func kitPanel(_ sender: Any?) {
+		model.kitOpen.toggle()
+		if model.kitOpen {
+			loadKit()
+		}
 	}
 
 	func recheck() {
@@ -3411,6 +4166,41 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 	@objc func zoomReset(_ sender: Any?) { zoom(model.over, 0) }
 
 	@objc func side(_ sender: Any?) { withAnimation(.easeOut(duration: 0.2)) { model.side.toggle() } }
+
+	@objc func tuning(_ sender: Any?) {
+		model.setOpen.toggle()
+		if model.setOpen {
+			store("", "")
+		}
+	}
+
+	func store(_ key: String, _ value: String) {
+		let script = Bundle.main.object(forInfoDictionaryKey: "SlycbarCli") as? String ?? ""
+		DispatchQueue.global().async {
+			let out = call(script, key.isEmpty ? ["settings"] : ["settings", key, value]).out
+			let found = (try? JSONSerialization.jsonObject(with: out)) as? [String: Any]
+			DispatchQueue.main.async {
+				guard let found else {
+					self.model.status = key.isEmpty ? "slybar settings did not answer" : key + " was not stored, slybar settings refused " + value
+					return
+				}
+				self.model.set = found
+				let number = (found[key] as? NSNumber)?.doubleValue ?? 0
+				if key == "width" {
+					self.model.width = number
+					UserDefaults.standard.set(number, forKey: "width")
+				} else if key == "scale" {
+					self.model.scale = number
+					UserDefaults.standard.set(number, forKey: "scale")
+				} else if key == "zoom" {
+					self.model.zoomed = number
+					self.web.pageZoom = number
+					UserDefaults.standard.set(number, forKey: "zoom")
+				}
+				self.tune()
+			}
+		}
+	}
 	@objc func gitPanel(_ sender: Any?) {
 		model.gitOpen.toggle()
 		if model.gitOpen {
@@ -3739,6 +4529,172 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 		}
 	}
 
+	func stream() {
+		guard !streaming, win == nil || win.isVisible else { return }
+		streaming = true
+		let agents = model.agents
+		let known = streamed
+		let had = carded
+		let start = primaries
+		let wired = worktrees
+		let due = Date().timeIntervalSince(listed) > 30
+		reader.async {
+			let fm = FileManager.default
+			func trim(_ text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
+			var tops = start
+			var repos: [String] = []
+			for agent in agents where !agent.dir.isEmpty {
+				if tops[agent.dir] == nil {
+					let common = trim(String(decoding: git(agent.dir, ["rev-parse", "--path-format=absolute", "--git-common-dir"]).out, as: UTF8.self))
+					tops[agent.dir] = common.hasSuffix("/.git") ? String(common.dropLast(5)) : ""
+				}
+				if let top = tops[agent.dir], !top.isEmpty, !repos.contains(top) {
+					repos.append(top)
+				}
+			}
+			var worktrees = due ? [:] : wired
+			for repo in due ? repos : [] {
+				var path = ""
+				for line in String(decoding: git(repo, ["worktree", "list", "--porcelain"]).out, as: UTF8.self).split(separator: "\n") {
+					if line.hasPrefix("worktree ") {
+						path = String(line.dropFirst(9))
+					}
+					if line.hasPrefix("branch refs/heads/"), path != repo {
+						worktrees[path] = String(line.dropFirst(18))
+					}
+				}
+			}
+			var fresh: [String: (Int, Feed)] = [:]
+			var feeds: [Feed] = []
+			for agent in agents {
+				for log in agent.logs {
+					let size = ((try? fm.attributesOfItem(atPath: log)[.size]) as? NSNumber)?.intValue ?? 0
+					let main = log == agent.logs.first
+					var meta: [String: Any] = [:]
+					if !main, let data = fm.contents(atPath: String(log.dropLast(6)) + ".meta.json") {
+						meta = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+					}
+					var lines: [String] = []
+					var asked: [String] = []
+					var trees: Set<String> = []
+					var used = ""
+					var read = 0
+					if let hit = known[log], hit.0 <= size {
+						read = hit.0
+						used = hit.1.model
+						lines = hit.1.lines
+						asked = hit.1.questions
+						trees = hit.1.trees
+					}
+					if size > read, let handle = FileHandle(forReadingAtPath: log) {
+						let begin = read == 0 ? max(0, size - 300000) : max(read, size - 2000000)
+						handle.seek(toFileOffset: UInt64(begin))
+						let data = handle.readDataToEndOfFile()
+						handle.closeFile()
+						let cut = data.lastIndex(of: 10).map { $0 + 1 } ?? 0
+						let text = String(decoding: data.prefix(cut), as: UTF8.self)
+						read = begin + cut
+						for (path, branch) in worktrees where text.contains(path + "/") || text.contains(path + " ") || text.contains(path + "\"") {
+							trees.insert(branch)
+						}
+						for line in text.split(separator: "\n") where line.contains("\"type\":\"assistant\"") {
+							guard let entry = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else { continue }
+							if let branch = entry["gitBranch"] as? String, !branch.isEmpty {
+								trees.insert(branch)
+							}
+							if let named = (entry["message"] as? [String: Any])?["model"] as? String, !named.hasPrefix("<") {
+								used = named
+							}
+							for block in ((entry["message"] as? [String: Any])?["content"] as? [[String: Any]]) ?? [] {
+								if block["type"] as? String == "text", let said = block["text"] as? String {
+									let first = said.split(separator: "\n").map { trim(String($0)) }.first { !$0.isEmpty } ?? ""
+									if !first.isEmpty {
+										lines.append("› " + first.prefix(300))
+									}
+									asked = said.matches(of: #/(?m)^(Q\d+)[,:.]?\s*(.*)$/#).map { String($0.1) + " " + String($0.2) }
+								}
+								if block["type"] as? String == "tool_use", let tool = block["name"] as? String {
+									let input = block["input"] as? [String: Any] ?? [:]
+									let subject = ["file_path", "notebook_path", "command", "pattern", "description", "url", "query", "prompt", "skill"].lazy.compactMap { input[$0] as? String }.first ?? ""
+									let shown = subject.hasPrefix("/") && !subject.contains(" ") ? (subject as NSString).lastPathComponent : subject.split(separator: "\n").first.map(String.init) ?? ""
+									lines.append(tool + " " + shown.prefix(300))
+								}
+							}
+						}
+						lines = Array(lines.suffix(40))
+					}
+					let feed = Feed(id: log, group: agent.sid, name: main ? agent.name : meta["agentType"] as? String ?? "agent", detail: main ? agent.status : meta["description"] as? String ?? "", model: used.isEmpty ? meta["model"] as? String ?? "" : used,
+						busy: main ? agent.status == "busy" : meta["finished"] as? Bool != true, lines: lines, questions: main ? agent.questions.map { $0.replacingOccurrences(of: "\t", with: " ") } : asked, trees: trees)
+					fresh[log] = (read, feed)
+					feeds.append(feed)
+				}
+			}
+			var cards: [Card] = []
+			var kept: [String: (Date, Card)] = [:]
+			let stale = Date().addingTimeInterval(-86400)
+			let stamp = ISO8601DateFormatter()
+			for repo in repos {
+				let dir = repo + "/.claude/tasks"
+				for name in (try? fm.contentsOfDirectory(atPath: dir)) ?? [] where name.hasSuffix(".md") {
+					let path = dir + "/" + name
+					let changed = (try? fm.attributesOfItem(atPath: path)[.modificationDate] as? Date) ?? .distantPast
+					var card: Card
+					if let hit = had[path], hit.0 == changed {
+						card = hit.1
+					} else {
+						guard let handle = FileHandle(forReadingAtPath: path) else { continue }
+						let text = String(decoding: handle.readData(ofLength: 16000), as: UTF8.self)
+						handle.closeFile()
+						var fields: [String: String] = [:]
+						var asked = 0
+						var key = ""
+						for (at, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+							if at == 0 {
+								if line != "---" { break }
+								continue
+							}
+							if line == "---" { break }
+							if line.hasPrefix("- ") || line.hasPrefix("  - ") {
+								if key == "questions" { asked += 1 }
+								continue
+							}
+							guard let colon = line.firstIndex(of: ":"), !line.hasPrefix(" ") else { continue }
+							key = String(line[..<colon])
+							let value = trim(String(line[line.index(after: colon)...]))
+							fields[key] = value.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+							if key == "questions", value.hasPrefix("["), value != "[]" {
+								asked = value.split(separator: ",").count
+							}
+						}
+						card = Card(id: path, repo: repo, number: fields["id"] ?? "", title: fields["title"] ?? name, kind: fields["type"] ?? "", status: fields["status"].flatMap { $0.isEmpty ? nil : $0 } ?? "draft",
+							tree: fields["tree"] ?? "", session: fields["session"] ?? "", updated: stamp.date(from: fields["updated_at"] ?? "") ?? changed, questions: asked)
+					}
+					kept[path] = (changed, card)
+					if card.status != "done" || card.updated > stale {
+						cards.append(card)
+					}
+				}
+			}
+			cards.sort { $0.updated > $1.updated }
+			DispatchQueue.main.async {
+				self.streaming = false
+				self.streamed = fresh
+				self.carded = kept
+				self.primaries = tops
+				if due {
+					self.worktrees = worktrees
+					self.listed = Date()
+				}
+				if self.model.live.cards != cards {
+					self.model.live.cards = cards
+				}
+				if self.model.live.feeds != feeds {
+					self.model.live.feeds = feeds
+				}
+			}
+		}
+	}
+
 	func watch() {
 		guard win == nil || win.isVisible else { return }
 		let home = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"] ?? NSHomeDirectory() + "/.claude"
@@ -3771,7 +4727,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 				let stamp = logs.map { $0 + ":" + String(((try? fm.attributesOfItem(atPath: $0)[.size]) as? NSNumber)?.intValue ?? 0) }.joined(separator: "|")
 				if let hit = known[pid], hit.0 == stamp {
 					let old = hit.1
-					let agent = Agent(id: pid, name: manifest["name"] as? String ?? (dir as NSString).lastPathComponent, dir: dir, status: manifest["status"] as? String ?? "idle", files: old.files, acts: old.acts, socket: old.socket, last: old.last, questions: old.questions, sid: id)
+					let agent = Agent(id: pid, name: manifest["name"] as? String ?? (dir as NSString).lastPathComponent, dir: dir, status: manifest["status"] as? String ?? "idle", files: old.files, acts: old.acts, socket: old.socket, last: old.last, questions: old.questions, sid: id, logs: logs)
 					agents.append(agent)
 					fresh[pid] = (stamp, agent)
 					continue
@@ -3832,7 +4788,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 						if files.count >= 6 { break }
 					}
 				}
-				agents.append(Agent(id: pid, name: manifest["name"] as? String ?? (dir as NSString).lastPathComponent, dir: dir, status: manifest["status"] as? String ?? "idle", files: Array(files.prefix(6)), acts: acts, socket: manifest["messagingSocketPath"] as? String ?? "", last: last, questions: open.map { $0.0 + "\t" + $0.1 }, sid: id))
+				agents.append(Agent(id: pid, name: manifest["name"] as? String ?? (dir as NSString).lastPathComponent, dir: dir, status: manifest["status"] as? String ?? "idle", files: Array(files.prefix(6)), acts: acts, socket: manifest["messagingSocketPath"] as? String ?? "", last: last, questions: open.map { $0.0 + "\t" + $0.1 }, sid: id, logs: logs))
 				if let made = agents.last {
 					fresh[pid] = (stamp, made)
 				}
@@ -4084,7 +5040,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 			top.submenu = menu
 			main.addItem(top)
 		}
-		add("Slyed", [("Hide", #selector(NSApplication.hide(_:)), "h", .command), ("Quit", #selector(NSApplication.terminate(_:)), "q", .command)])
+		add("Slyed", [("Settings…", #selector(tuning(_:)), ",", .command), ("-", nil, "", []), ("Hide", #selector(NSApplication.hide(_:)), "h", .command), ("Quit", #selector(NSApplication.terminate(_:)), "q", .command)])
 		add("File", [("Open…", #selector(pick(_:)), "o", .command), ("Save", #selector(save(_:)), "s", .command), ("-", nil, "", []), ("Close", #selector(NSWindow.performClose(_:)), "w", .command)])
 		add("Edit", [("Undo", Selector(("undo:")), "z", .command), ("Redo", Selector(("redo:")), "z", [.command, .shift]), ("-", nil, "", []), ("Cut", #selector(NSText.cut(_:)), "x", .command), ("Copy", #selector(NSText.copy(_:)), "c", .command), ("Paste", #selector(NSText.paste(_:)), "v", .command), ("Select All", #selector(NSText.selectAll(_:)), "a", .command)])
 		add("Navigate", [("Search Everywhere…", #selector(goSearch(_:)), "k", .command), ("Search Everywhere…", #selector(goSearch(_:)), "k", .control), ("Go to File…", #selector(goFile(_:)), "o", [.command, .shift]), ("Recent Files", #selector(goRecent(_:)), "e", .command), ("Go to Line…", #selector(goLine(_:)), "l", .command), ("-", nil, "", []), ("Back", #selector(back(_:)), "[", .command), ("Forward", #selector(forward(_:)), "]", .command), ("Declaration", #selector(declaration(_:)), "b", .command), ("-", nil, "", []), ("Comment to Agent…", #selector(goComment(_:)), "m", [.command, .shift]), ("Mention to Claude Code", #selector(mention(_:)), "k", [.command, .option])])
@@ -4140,6 +5096,21 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 			}
 			try? "open \(Int(Date().timeIntervalSince1970))\nchanges \(target)".write(toFile: tray + "/play", atomically: true, encoding: .utf8)
 		}
+		model.impact = { [unowned self] in
+			let tray = (cache as NSString).deletingLastPathComponent + "/tray"
+			let pid = pid_t((try? String(contentsOfFile: tray + "/pid", encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "") ?? 0
+			guard pid > 0, kill(pid, 0) == 0 else {
+				self.model.status = "the tray is not running"
+				return
+			}
+			guard CGPreflightScreenCaptureAccess() else {
+				CGRequestScreenCaptureAccess()
+				NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+				self.model.status = "impact waits for Screen Recording to be allowed for Slyed in System Settings"
+				return
+			}
+			try? "open \(Int(Date().timeIntervalSince1970))\nimpact".write(toFile: tray + "/play", atomically: true, encoding: .utf8)
+		}
 		model.compare = { [unowned self] ref in
 			self.model.base = ref
 			self.model.diff = true
@@ -4172,8 +5143,17 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 			self.show(path)
 		}
 		model.comment = { [unowned self] in self.comment($0) }
+		model.store = { [unowned self] in self.store($0, $1) }
 		model.answer = { [unowned self] agent, text in
 			self.model.status = self.post(agent.socket, text) ? "answer sent to " + agent.name : "not sent to " + agent.name
+			let ruled = agent.questions.map { $0.components(separatedBy: "\t") }.filter { $0.count > 1 && text.range(of: "\\b" + $0[0] + "\\b", options: [.regularExpression, .caseInsensitive]) != nil }
+			if !ruled.isEmpty {
+				let body = ruled.map { "- " + $0[0] + ": " + $0[1] + "\n  " + text.replacingOccurrences(of: "\n", with: " ") }.joined(separator: "\n")
+				DispatchQueue.global().async { self.held(agent).forEach { self.minute($0, "Answers", body) } }
+			}
+			if self.model.talk?.agent?.id == agent.id {
+				self.model.talk?.lines.append("**You** " + text)
+			}
 			note("comments.log", agent.name + " answer")
 		}
 		model.jump = { [unowned self] path, line in
@@ -4186,8 +5166,28 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 			self.page("return window.slyc.focus()", [:])
 		}
 		NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [unowned self] event in
-			guard event.keyCode == 53, self.model.gitOpen || !self.model.palette.isEmpty else { return event }
+			if self.model.reviewing, self.model.palette.isEmpty, !self.model.gitOpen, !self.model.boardOpen {
+				let held = event.modifierFlags.intersection([.command, .control, .option, .shift])
+				if held == .option, event.keyCode == 126 || event.keyCode == 125 {
+					self.walk(event.keyCode == 125)
+					return nil
+				}
+				if event.keyCode == 36 || event.keyCode == 76, held == .command || held == .control || held == .option {
+					self.judge(self.model.hunk, held == .option ? "rejected" : "accepted")
+					return nil
+				}
+			}
+			guard event.keyCode == 53, self.model.gitOpen || self.model.setOpen || self.model.kitOpen || self.model.talk != nil || !self.model.palette.isEmpty || self.model.boardOpen else { return event }
+			if self.model.talk != nil {
+				self.model.talk = nil
+				return nil
+			}
+			if !self.model.gitOpen && !self.model.setOpen && !self.model.kitOpen && self.model.palette.isEmpty {
+				self.model.boardOpen = false
+			}
 			self.model.gitOpen = false
+			self.model.setOpen = false
+			self.model.kitOpen = false
 			if !self.model.palette.isEmpty {
 				self.model.close()
 			}
@@ -4220,6 +5220,9 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 		model.decide = { [unowned self] in self.decide($0) }
 		model.visit = { [unowned self] change in self.seek(self.model.hunks.firstIndex { $0.change == change } ?? -1) }
 		model.judge = { [unowned self] in self.judge($0, $1) }
+		model.audit = { [unowned self] in self.audit($0) }
+		model.converse = { [unowned self] in self.converse($0, $1, $2, $3) }
+		model.openKit = { [unowned self] in self.kitPanel(nil) }
 		model.walk = { [unowned self] in self.walk($0) }
 		model.resume = { [unowned self] in self.resume() }
 		model.back = { [unowned self] in self.back(nil) }
@@ -4256,6 +5259,12 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 			self.recheck()
 			self.tune()
 		}
+		Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [unowned self] _ in
+			if self.model.boardOpen {
+				self.stream()
+			}
+		}
+		model.stream = { [unowned self] in self.stream() }
 		watch()
 		model.up = { [unowned self] in
 			let parent = (self.model.root as NSString).deletingLastPathComponent

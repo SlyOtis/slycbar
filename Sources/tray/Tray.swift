@@ -71,7 +71,7 @@ struct Reading: Decodable {
 }
 
 enum Ask {
-	case free([String]), space, use(String), forget(String), warp(String), celery, edit, login, refresh, fit
+	case free([String]), space, use(String), forget(String), warp(String), impact, celery, edit, login, refresh, fit
 }
 
 struct Tip: Equatable {
@@ -645,9 +645,8 @@ struct Listed: View {
 				Hover { over in
 					Image(systemName: "trash")
 						.foregroundStyle(over ? Ink.bad : Ink.dim)
-						.padding(.horizontal, 8)
-						.overlay(Capsule().strokeBorder(over ? Ink.bad : Ink.line, lineWidth: 1))
-						.contentShape(Capsule())
+						.padding(.horizontal, 4)
+						.contentShape(Rectangle())
 						.onTapGesture(count: 2) {
 							let all = (model.reading.resources?.rows ?? []) + (model.reading.space?.rows ?? [])
 							model.free(all.filter { $0.group == part.id }.compactMap { $0.target })
@@ -842,6 +841,13 @@ struct Face: View {
 			HStack(spacing: 12) {
 				Text(session).font(.system(size: 11)).foregroundStyle(Ink.dim).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
 				Hover { over in
+					Button(action: { model.send(.impact) }) {
+						Text("☢").font(.system(size: 13)).foregroundStyle(over ? Ink.fg : Ink.dim).contentShape(Rectangle())
+					}
+					.buttonStyle(.plain).focusable(false)
+				}
+				.help("What your total token usage costs the planet in energy and water")
+				Hover { over in
 					Button(action: { model.send(.warp((model.reading.accounts ?? []).first { $0.active }?.email ?? "")) }) {
 						Text("WARP").font(.custom("Impact", size: 11)).tracking(1.5).foregroundStyle(over ? Ink.fg : Ink.dim).contentShape(Rectangle())
 					}
@@ -892,6 +898,8 @@ public final class Host: NSObject, NSWindowDelegate, WKScriptMessageHandler {
 	var win: Keyed!
 	var shown = ""
 	var played = ""
+	var living: Timer?
+	var reading = false
 	var last = ""
 	var listed = ""
 	var hiddenAt = Date.distantPast
@@ -1069,6 +1077,7 @@ public final class Host: NSObject, NSWindowDelegate, WKScriptMessageHandler {
 	}
 
 	func overlay(_ screen: NSRect, _ page: String, _ query: String, _ clear: Bool) {
+		living?.invalidate()
 		fading?.invalidate()
 		fading = nil
 		if warpWin == nil {
@@ -1122,6 +1131,40 @@ public final class Host: NSObject, NSWindowDelegate, WKScriptMessageHandler {
 		}
 	}
 
+	func impact() {
+		guard CGPreflightScreenCaptureAccess() else {
+			CGRequestScreenCaptureAccess()
+			NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+			log("impact not started, screen recording is not allowed")
+			return
+		}
+		let at = screenAt()
+		shell(["impact", String(at.display)]) { text in
+			guard !text.isEmpty else {
+				self.log("impact not started, slybar impact gave nothing")
+				return
+			}
+			try? text.write(toFile: self.dir + "/impact.json", atomically: true, encoding: .utf8)
+			var plain = CharacterSet.alphanumerics
+			plain.insert(charactersIn: "-_.!~*'()")
+			self.overlay(at.screen.frame, "impact.html", "data=" + ((self.dir + "/impact.json").addingPercentEncoding(withAllowedCharacters: plain) ?? ""), false)
+			self.living = Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { timer in
+				guard self.warpWin?.isVisible == true else {
+					timer.invalidate()
+					return
+				}
+				guard !self.reading else { return }
+				self.reading = true
+				self.shell(["impact", "live"]) { found in
+					self.reading = false
+					if !found.isEmpty {
+						try? found.write(toFile: self.dir + "/impact.json", atomically: true, encoding: .utf8)
+					}
+				}
+			}
+		}
+	}
+
 	func unwarp() {
 		guard let warpWin, warpWin.isVisible, fading == nil else { return }
 		fading = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { timer in
@@ -1170,6 +1213,8 @@ public final class Host: NSObject, NSWindowDelegate, WKScriptMessageHandler {
 			}
 		case .forget(let email):
 			shell(["forget", email]) { _ in self.load() }
+		case .impact:
+			impact()
 		case .warp(let email):
 			warp(email)
 		case .celery:
@@ -1238,7 +1283,11 @@ public final class Host: NSObject, NSWindowDelegate, WKScriptMessageHandler {
 			played = play
 			if play.hasPrefix("open") {
 				let rows = play.split(separator: "\n").map(String.init)
-				warp("", changes: rows.count > 1 && rows[1].hasPrefix("changes ") ? String(rows[1].dropFirst(8)) : "")
+				if rows.count > 1, rows[1] == "impact" {
+					impact()
+				} else {
+					warp("", changes: rows.count > 1 && rows[1].hasPrefix("changes ") ? String(rows[1].dropFirst(8)) : "")
+				}
 			} else {
 				unwarp()
 			}

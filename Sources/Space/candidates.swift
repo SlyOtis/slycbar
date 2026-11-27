@@ -278,7 +278,8 @@ extension Work {
 		for b in builds {
 			let project = dirname(b.dir)
 			let name = basename(b.dir)
-			if inuse(project) || tracked(b.dir) { continue }
+			let rust = name == "target" && exists(project + "/Cargo.toml")
+			if (!rust && inuse(project)) || tracked(b.dir) { continue }
 			if Work.caches.contains(name) {
 				guard still(b.dir) else { continue }
 				emit(row("cache", b.kb, "rm", b.dir, "\(name) cache of \(basename(project)), not written for \(unused) days, rebuilt on the next run", "build folders"))
@@ -286,30 +287,32 @@ extension Work {
 				let k = at(tabs(at(lines(size(b.dir + "/cache")), 0)), 0)
 				guard whole(k) > 51200, still(b.dir + "/cache") else { continue }
 				emit(row("cache", k, "rm", b.dir + "/cache", "next.js build cache of \(basename(project)), not written for \(unused) days, rebuilt on the next build", "build folders"))
-			} else if name == "target", exists(project + "/Cargo.toml") {
+			} else if rust {
 				let cargo = which("cargo") != nil
+				let used = inuse(project)
 				for p in ((try? FileManager.default.contentsOfDirectory(atPath: b.dir)) ?? []).sorted(by: before) {
 					let d = b.dir + "/" + p
 					guard folder(d) else { continue }
-					guard still(d) else {
+					let written = !still(d)
+					if written {
 						let old = lines(sh("find", [d + "/incremental", "-mindepth", "1", "-maxdepth", "1", "-type", "d", "!", "-newer", ref]).out)
-						guard !old.isEmpty else { continue }
-						let k = at(tabs(lines(sh("du", ["-skc"] + old, limit: limit).out).last ?? ""), 0)
-						guard whole(k) > 102400 else { continue }
-						emit(row("stale", k, "run", "find \"\(d)/incremental\" -mindepth 1 -maxdepth 1 -type d -mtime +\(unused) -exec rm -rf {} +",
-							"incremental data of \(old.count) crates in the rust \(p) build of \(basename(project)), not written for \(unused) days while that build is in use", "build folders"))
-						continue
+						let k = old.isEmpty ? "0" : at(tabs(lines(sh("du", ["-skc"] + old, limit: limit).out).last ?? ""), 0)
+						if whole(k) > 102400 {
+							emit(row("stale", k, "run", "find \"\(d)/incremental\" -mindepth 1 -maxdepth 1 -type d -mtime +\(unused) -exec rm -rf {} +",
+								"incremental data of \(old.count) crates in the rust \(p) build of \(basename(project)), not written for \(unused) days while that build is in use", "build folders"))
+						}
 					}
 					let k = at(tabs(at(lines(size(d)), 0)), 0)
 					guard whole(k) > 102400 else { continue }
 					let manifest = "cargo clean --manifest-path \"\(project)/Cargo.toml\""
-					let why = "rust \(p) output of \(basename(project)), not written for \(unused) days while the project moved"
+					let kind = written ? "cache" : "stale"
+					let why = written ? "rust \(p) build of \(basename(project)), \(used ? "in use" : "written in the last \(unused) days"), rebuilt in full on the next build" : "rust \(p) output of \(basename(project)), not written for \(unused) days while the project moved"
 					if cargo, folder(d + "/.fingerprint") {
-						emit(row("stale", k, "run", manifest + " --profile " + (p == "debug" ? "dev" : p), why, "build folders"))
+						emit(row(kind, k, "run", manifest + " --profile " + (p == "debug" ? "dev" : p), why, "build folders"))
 					} else if cargo, p == "doc" {
-						emit(row("stale", k, "run", manifest + " --doc", why, "build folders"))
+						emit(row(kind, k, "run", manifest + " --doc", why, "build folders"))
 					} else {
-						emit(row("stale", k, "rm", d, why, "build folders"))
+						emit(row(kind, k, "rm", d, why, "build folders"))
 					}
 				}
 			}

@@ -119,6 +119,51 @@ enum Review {
 		try? FileManager.default.removeItem(atPath: told(sid))
 	}
 
+	static func record(_ path: String) {
+		var plan = Base.json(path)
+		guard let sid = plan["session"] as? String, !sid.isEmpty, var changes = plan["changes"] as? [Json] else { return }
+		let fm = FileManager.default
+		let ref = "refs/slyed/" + sid + ".plan"
+		var tips: [String: String] = [:]
+		for at in changes.indices {
+			let target = changes[at]["path"] as? String ?? ""
+			let proposed = changes[at]["proposed"] as? String ?? ""
+			var dir = (target as NSString).deletingLastPathComponent
+			while dir.count > 1, !fm.fileExists(atPath: dir) {
+				dir = (dir as NSString).deletingLastPathComponent
+			}
+			var env = Base.tools()
+			func git(_ args: [String]) -> (code: Int32, out: String) {
+				let found = Base.run("/usr/bin/git", ["-C", dir] + args, env: env)
+				return (found.code, found.out.trimmingCharacters(in: .whitespacesAndNewlines))
+			}
+			let top = git(["rev-parse", "--show-toplevel"])
+			let store = git(["rev-parse", "--absolute-git-dir"])
+			guard top.code == 0, store.code == 0, target.hasPrefix(top.out + "/"), fm.fileExists(atPath: proposed) else { continue }
+			let index = store.out + "/slyed/" + sid + ".plan.index"
+			try? fm.createDirectory(atPath: store.out + "/slyed", withIntermediateDirectories: true)
+			env["GIT_INDEX_FILE"] = index
+			var parent = tips[top.out] ?? ""
+			if parent.isEmpty {
+				parent = git(["rev-parse", "-q", "--verify", "HEAD^{commit}"]).out
+				try? fm.removeItem(atPath: index)
+				guard !parent.isEmpty, git(["read-tree", parent]).code == 0 else { continue }
+			}
+			let blob = git(["hash-object", "-w", "--", proposed])
+			guard blob.code == 0, git(["update-index", "--add", "--cacheinfo", "100644," + blob.out + "," + String(target.dropFirst(top.out.count + 1))]).code == 0 else { continue }
+			let tree = git(["write-tree"])
+			let said = [changes[at]["title"] as? String ?? "", changes[at]["why"] as? String ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
+			let made = git(["commit-tree", tree.out, "-p", parent, "-m", said.isEmpty ? (target as NSString).lastPathComponent : said])
+			guard tree.code == 0, made.code == 0 else { continue }
+			tips[top.out] = made.out
+			changes[at]["commit"] = made.out
+			_ = git(["update-ref", ref, made.out])
+		}
+		guard !tips.isEmpty else { return }
+		plan["changes"] = changes
+		Base.write(path, Base.text(plan, pretty: true))
+	}
+
 	static func told(_ sid: String) -> String {
 		(Base.env["TMPDIR"] ?? "/tmp") + "/slycbar.plan." + sid
 	}
@@ -172,6 +217,7 @@ enum Review {
 		}
 		if let failed = check(Base.json(path)) { return (nil, failed) }
 		own(path)
+		record(path)
 		let code = show(path)
 		var found = status(path)
 		if code != 0 {
@@ -208,6 +254,72 @@ enum Review {
 		default:
 			return Base.fail(usage, 2)
 		}
+	}
+
+	static func why(_ log: String, _ id: String, _ path: String) -> String {
+		guard let handle = FileHandle(forReadingAtPath: log) else { return "" }
+		let size = handle.seekToEndOfFile()
+		handle.seek(toFileOffset: size > 400000 ? size - 400000 : 0)
+		let lines = String(decoding: handle.readDataToEndOfFile(), as: UTF8.self).split(separator: "\n")
+		handle.closeFile()
+		var seen = false
+		for line in lines.reversed() {
+			guard let entry = Base.parse(String(line)), let role = entry["type"] as? String else { continue }
+			let content = (entry["message"] as? Json)?["content"]
+			let blocks = content as? [Json] ?? []
+			if role == "user" {
+				if seen, content is String || blocks.contains(where: { $0["type"] as? String == "text" }) { return "" }
+				continue
+			}
+			guard role == "assistant" else { continue }
+			if !seen {
+				seen = blocks.contains { $0["type"] as? String == "tool_use" && (id.isEmpty ? ($0["input"] as? Json)?["file_path"] as? String == path : $0["id"] as? String == id) }
+				guard seen else { continue }
+			}
+			let said = (blocks.last(where: { $0["type"] as? String == "text" })?["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+			if !said.isEmpty {
+				return String(said.suffix(1000))
+			}
+		}
+		return ""
+	}
+
+	static func snap(_ sid: String, _ path: String, _ why: String?) {
+		guard !sid.isEmpty, path.hasPrefix("/") else { return }
+		let fm = FileManager.default
+		var dir = (path as NSString).deletingLastPathComponent
+		while dir.count > 1, !fm.fileExists(atPath: dir) {
+			dir = (dir as NSString).deletingLastPathComponent
+		}
+		var env = Base.tools()
+		func git(_ args: [String]) -> (code: Int32, out: String) {
+			let found = Base.run("/usr/bin/git", ["-C", dir] + args, env: env)
+			return (found.code, found.out.trimmingCharacters(in: .whitespacesAndNewlines))
+		}
+		let store = git(["rev-parse", "--absolute-git-dir"])
+		guard store.code == 0 else { return }
+		let ref = "refs/slyed/" + sid
+		var parent = git(["rev-parse", "-q", "--verify", ref + "^{commit}"])
+		if parent.code != 0 {
+			parent = git(["rev-parse", "-q", "--verify", "HEAD^{commit}"])
+		}
+		let index = store.out + "/slyed/" + sid + ".index"
+		try? fm.createDirectory(atPath: store.out + "/slyed", withIntermediateDirectories: true)
+		env["GIT_INDEX_FILE"] = index
+		if !fm.fileExists(atPath: index), parent.code == 0 {
+			guard git(["read-tree", parent.out]).code == 0 else { return }
+		}
+		_ = git(["add", "-A", "--", path])
+		let tree = git(["write-tree"])
+		guard tree.code == 0 else { return }
+		if parent.code == 0, git(["rev-parse", parent.out + "^{tree}"]).out == tree.out { return }
+		let said = why.map { $0.isEmpty ? (path as NSString).lastPathComponent : $0 } ?? "base"
+		let made = git(["commit-tree", tree.out] + (parent.code == 0 ? ["-p", parent.out] : []) + ["-m", said])
+		guard made.code == 0 else {
+			_ = Base.fail("slybar guard: no snapshot of \(path) on \(ref), git commit-tree failed, the repository may have no user.name and user.email")
+			return
+		}
+		_ = git(["update-ref", ref, made.out])
 	}
 
 	static func off() -> Bool {

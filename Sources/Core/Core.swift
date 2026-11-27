@@ -1,7 +1,7 @@
 import Foundation
 
 public enum Core {
-	static let usage = "usage: slybar open|state|refresh [email]|use <email>|login|forget <email>|resources|scan|free <target>...|warp [email] [display]|changes <path> [display]|widget|edit <path> [line] [end]|review <plan.json|-> [status|wait [seconds]|put]|mcp|compare <path> <path>|server <path> [install]|settings [key [value]]|plugin install [--claude] [--codex] [--gemini] [--opencode] [--desktop] [--chatgpt] [--antigravity]|status|install|guard|statusline|space <command>"
+	static let usage = "usage: slybar open|state|refresh [email]|use <email>|login|forget <email>|resources|scan|free <target>...|warp [email] [display]|changes <path> [display]|impact [display|live|fill]|widget|edit <path> [line] [end]|review <plan.json|-> [status|wait [seconds]|put]|mcp|compare <path> <path>|server <path> [install]|settings [key [value]]|plugin install [--claude] [--codex] [--gemini] [--opencode] [--desktop] [--chatgpt] [--antigravity]|status|install|guard|statusline|space <command>"
 
 	public static func run(_ args: [String]) -> Int32 {
 		Base.prepare()
@@ -17,6 +17,7 @@ public enum Core {
 		case "scan": return State.space()
 		case "free": return State.free(rest)
 		case "warp": return Warp.warp(rest.first ?? "", rest.count > 1 ? rest[1] : "1")
+		case "impact": return Warp.impact(rest.first ?? "1")
 		case "changes": return rest.isEmpty ? Base.fail(usage, 2) : Warp.changes(rest[0], rest.count > 1 ? rest[1] : "1")
 		case "widget": return Tools.widget()
 		case "edit": return Tools.edit(rest)

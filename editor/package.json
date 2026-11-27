@@ -29,6 +29,7 @@
     "codemirror": "^6.0.2",
     "mermaid": "^11.4.1",
     "prettier": "^3.9.10",
+    "three": "0.160.1",
     "vue": "^3.5.22",
     "y-protocols": "^1.0.7",
     "yjs": "^13.6.31"

@@ -118,10 +118,12 @@ html:has(.mar-editor-frame-mode-both), html:has(.mar-editor-frame-mode-both) bod
 .tree header .where { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: rgba(255, 255, 255, 0.5); font-size: 0.9em; }
 .tree header .what { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: rgba(255, 255, 255, 0.7); }
 .tree header .tally { display: inline-flex; gap: 0.5em; font: 600 0.9em/1.4 ui-monospace, Menlo, monospace; }
-.tree .why { margin: 0; padding: 0.5em 1em; white-space: pre-wrap; color: rgba(255, 255, 255, 0.7); }
-.tree .hunk { margin: 0.6em 0.8em; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 0.5em; overflow: hidden; opacity: 0.55; cursor: pointer; transition: opacity 0.15s, border-color 0.15s; }
+.tree .hunk > .why { display: none; position: absolute; top: 1.9em; right: 1em; z-index: 3; max-width: min(46em, 70%); margin: 0; padding: 0.5em 0.8em; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 0.5em; background: rgba(38, 40, 45, 0.96); box-shadow: 0 0.4em 1.2em rgba(0, 0, 0, 0.4); white-space: pre-wrap; color: rgba(255, 255, 255, 0.85); }
+.tree .hunk:hover > .why { display: block; }
+.tree .why b { color: #ef8221; font-weight: 700; }
+.tree .hunk { position: relative; margin: 0 0 0.6em; opacity: 0.55; cursor: pointer; transition: opacity 0.15s; }
 .tree .hunk:hover { opacity: 0.85; }
-.tree .hunk.on { opacity: 1; border-color: var(--accent); }
+.tree .hunk.on { opacity: 1; }
 .tree .hunk.accepted { border-left: 0.25em solid #6aab73; }
 .tree .hunk.rejected { border-left: 0.25em solid #f75464; }
 .tree .head { display: flex; align-items: baseline; gap: 0.8em; padding: 0.25em 0.8em; background: rgba(255, 255, 255, 0.04); color: rgba(255, 255, 255, 0.5); font-size: 0.9em; }

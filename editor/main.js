@@ -12,24 +12,125 @@ import '@fontsource/roboto-mono/400-italic.css'
 import '@fontsource/roboto-mono/500.css'
 import '@fontsource/roboto-mono/700.css'
 import { Compartment, EditorState, StateEffect, StateField } from '@codemirror/state'
-import { HighlightStyle, LanguageDescription, StreamLanguage, syntaxHighlighting } from '@codemirror/language'
+import { HighlightStyle, LanguageDescription, StreamLanguage, foldAll, foldCode, syntaxHighlighting, unfoldAll, unfoldCode } from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
 import { languages } from '@codemirror/language-data'
 import { MergeView, getChunks, getOriginalDoc, unifiedMergeView } from '@codemirror/merge'
 import { Decoration, EditorView, GutterMarker, gutter, hoverTooltip, keymap } from '@codemirror/view'
 import { Prec } from '@codemirror/state'
-import { copyLineDown, deleteLine, moveLineDown, moveLineUp, selectParentSyntax } from '@codemirror/commands'
-import { openSearchPanel } from '@codemirror/search'
+import { copyLineDown, cursorMatchingBracket, deleteLine, indentSelection, insertBlankLine, moveLineDown, moveLineUp, selectParentSyntax, splitLine, toggleBlockComment, toggleComment } from '@codemirror/commands'
+import { findNext, findPrevious, openSearchPanel, selectNextOccurrence, selectSelectionMatches } from '@codemirror/search'
+import { nextDiagnostic, previousDiagnostic } from '@codemirror/lint'
+
+const grown = new WeakMap()
+
+function grow(v) {
+  const stack = grown.get(v) || []
+  const before = v.state.selection
+  if (stack.length && !stack[stack.length - 1].after.eq(before)) stack.length = 0
+  if (selectParentSyntax(v)) {
+    stack.push({ before: before, after: v.state.selection })
+    grown.set(v, stack)
+  }
+  return true
+}
+
+function shrink(v) {
+  const stack = grown.get(v) || []
+  const last = stack[stack.length - 1]
+  if (!last || !last.after.eq(v.state.selection)) return true
+  stack.pop()
+  v.dispatch({ selection: last.before, userEvent: 'select' })
+  return true
+}
+
+function join(v) {
+  const doc = v.state.doc
+  const range = v.state.selection.main
+  const first = doc.lineAt(range.from)
+  const last = doc.line(Math.min(doc.lines, Math.max(first.number + 1, doc.lineAt(range.to).number)))
+  if (last.number === first.number) return true
+  const text = doc.sliceString(first.from, last.to).split('\n').map(function (l, i) { return i ? l.trimStart() : l.trimEnd() }).join(' ')
+  v.dispatch({ changes: { from: first.from, to: last.to, insert: text }, selection: { anchor: first.from + first.text.trimEnd().length }, userEvent: 'input' })
+  return true
+}
+
+function recase(v) {
+  v.dispatch(v.state.changeByRange(function (range) {
+    const word = range.empty ? v.state.wordAt(range.head) : range
+    if (!word) return { range: range }
+    const text = v.state.sliceDoc(word.from, word.to)
+    return { changes: { from: word.from, to: word.to, insert: text === text.toUpperCase() ? text.toLowerCase() : text.toUpperCase() }, range: range }
+  }))
+  return true
+}
+
+function above(v) {
+  const line = v.state.doc.lineAt(v.state.selection.main.head)
+  const indent = /^\s*/.exec(line.text)[0]
+  v.dispatch({ changes: { from: line.from, insert: indent + '\n' }, selection: { anchor: line.from + indent.length }, userEvent: 'input' })
+  return true
+}
+
+function block(forward, extend) {
+  return function (v) {
+    const text = v.state.doc.toString()
+    const main = v.state.selection.main
+    let depth = 0
+    for (let at = forward ? main.head : main.head - 1; at >= 0 && at < text.length; at += forward ? 1 : -1) {
+      if ((forward ? '([{' : ')]}').includes(text[at])) depth++
+      if ((forward ? ')]}' : '([{').includes(text[at]) && depth-- === 0) {
+        const to = forward ? at : at + 1
+        v.dispatch({ selection: { anchor: extend ? main.anchor : to, head: to }, scrollIntoView: true, userEvent: 'select' })
+        return true
+      }
+    }
+    return true
+  }
+}
 
 const keys = Prec.highest(keymap.of([
+  { key: 'Mod-w', run: grow },
+  { key: 'Shift-Mod-w', run: shrink },
+  { key: 'Alt-ArrowUp', run: grow },
+  { key: 'Alt-ArrowDown', run: shrink },
   { key: 'Mod-d', run: copyLineDown },
+  { key: 'Mod-y', run: deleteLine },
   { key: 'Mod-Backspace', run: deleteLine },
   { key: 'Shift-Alt-ArrowUp', run: moveLineUp },
   { key: 'Shift-Alt-ArrowDown', run: moveLineDown },
   { key: 'Shift-Mod-ArrowUp', run: moveLineUp },
   { key: 'Shift-Mod-ArrowDown', run: moveLineDown },
-  { key: 'Alt-ArrowUp', run: selectParentSyntax },
-  { key: 'Mod-r', run: openSearchPanel }
+  { key: 'Mod-/', run: toggleComment },
+  { key: 'Alt-Mod-/', run: toggleBlockComment },
+  { key: 'Shift-Enter', run: insertBlankLine },
+  { key: 'Alt-Mod-Enter', run: above },
+  { key: 'Mod-Enter', run: splitLine },
+  { key: 'Ctrl-Shift-j', run: join },
+  { key: 'Shift-Mod-u', run: recase },
+  { key: 'Ctrl-Alt-i', run: indentSelection },
+  { key: 'Alt-Mod-l', run: function () { tidy(); return true } },
+  { key: 'Mod-f', run: openSearchPanel },
+  { key: 'Mod-r', run: openSearchPanel },
+  { key: 'F3', run: findNext },
+  { key: 'Shift-F3', run: findPrevious },
+  { key: 'Mod-g', run: findNext },
+  { key: 'Shift-Mod-g', run: findPrevious },
+  { key: 'Ctrl-g', run: selectNextOccurrence },
+  { key: 'Ctrl-Mod-g', run: selectSelectionMatches },
+  { key: 'Mod-=', run: unfoldCode },
+  { key: 'Mod-+', run: unfoldCode },
+  { key: 'Mod--', run: foldCode },
+  { key: 'Shift-Mod-=', run: unfoldAll },
+  { key: 'Shift-Mod-+', run: unfoldAll },
+  { key: 'Shift-Mod--', run: foldAll },
+  { key: 'Ctrl-m', run: cursorMatchingBracket },
+  { key: 'Alt-Mod-[', run: block(false, false) },
+  { key: 'Alt-Mod-]', run: block(true, false) },
+  { key: 'Shift-Alt-Mod-[', run: block(false, true) },
+  { key: 'Shift-Alt-Mod-]', run: block(true, true) },
+  { key: 'F2', run: nextDiagnostic },
+  { key: 'Shift-F2', run: previousDiagnostic }
 ]))
 
 const paint = Prec.highest(syntaxHighlighting(HighlightStyle.define([
@@ -820,8 +921,8 @@ const Sides = {
       const editable = state.locked ? [EditorState.readOnly.of(true)] : [EditorView.updateListener.of(function (u) { if (u.docChanged) changed(u.state.doc.toString()) })]
       const room = state.locked ? review : []
       both = new MergeView({
-        a: { doc: original || '', extensions: [basicSetup, oneDark, paint, sideSupport, EditorState.readOnly.of(true), focused('a')].concat(room) },
-        b: { doc: current, extensions: [basicSetup, oneDark, paint, sideSupport, focused('b')].concat(editable, room) },
+        a: { doc: original || '', extensions: [basicSetup, keys, oneDark, paint, sideSupport, EditorState.readOnly.of(true), focused('a')].concat(room) },
+        b: { doc: current, extensions: [basicSetup, keys, oneDark, paint, sideSupport, focused('b')].concat(editable, room) },
         parent: el.value,
         collapseUnchanged: state.locked ? undefined : { margin: 3, minSize: 6 },
         gutter: true
@@ -864,10 +965,10 @@ const Tree = {
             h('span', { class: 'what' }, file.title),
             h('span', { class: 'tally' }, [file.added ? h('i', { class: 'up' }, '+' + file.added) : null, file.removed ? h('i', { class: 'down' }, '−' + file.removed) : null])
           ]),
-          file.why ? h('p', { class: 'why' }, file.why) : null,
           file.hunks.map(function (hunk) {
             return h('div', { key: hunk.id, class: ['hunk', hunk.status, { on: hunk.id === state.review.at }], onClick: function () { post({ hunk: hunk.id }) } }, [
               h('div', { class: 'head' }, [h('b', hunk.label), h('span', hunk.status), hunk.text ? h('q', hunk.text) : null]),
+              hunk.why ? h('p', { class: 'why' }, hunk.why.split(/\b([Qq]\d+)\b/).map(function (part, i) { return i % 2 ? h('b', part) : part })) : null,
               h('div', { class: 'rows' }, hunk.rows.map(function (row) {
                 return h('div', { class: row.t === '+' ? 'row add' : row.t === '-' ? 'row del' : 'row' }, [h('i', row.a || ''), h('i', row.b || ''), h('u', row.t), h('code', row.s)])
               }))

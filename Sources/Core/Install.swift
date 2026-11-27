@@ -47,7 +47,7 @@ enum Install {
 			("NSHighResolutionCapable", "<true/>"), ("CFBundleIconFile", "icon"), ("CFBundleDocumentTypes", types)]))
 
 		try? fm.createDirectory(atPath: Base.editApp + "/Contents/Resources", withIntermediateDirectories: true)
-		for name in ["warp.html", "celery.html", "celery.m4a", "editor/icon.png", "editor/tray.svg"] {
+		for name in ["warp.html", "impact.html", "hands.js", "celery.html", "celery.m4a", "editor/icon.png", "editor/tray.svg"] {
 			try? fm.copyItem(atPath: Base.here + "/" + name, toPath: Base.editApp + "/Contents/Resources/" + (name as NSString).lastPathComponent)
 		}
 
@@ -62,6 +62,7 @@ enum Install {
 		try? fm.copyItem(atPath: Base.here + "/editor/fonts", toPath: build + "/fonts")
 		guard Base.run("pnpm", ["install", "--frozen-lockfile"], dir: build).code == 0, Base.run("pnpm", ["build"], dir: build).code == 0 else { return Base.fail("the editor page did not build") }
 		try? fm.copyItem(atPath: build + "/dist", toPath: Base.editApp + "/Contents/Resources/editor")
+		try? fm.copyItem(atPath: build + "/node_modules/three/build/three.min.js", toPath: Base.editApp + "/Contents/Resources/three.min.js")
 		try? fm.copyItem(atPath: Base.here + "/editor/servers.json", toPath: Base.editApp + "/Contents/Resources/editor/servers.json")
 		let set = Base.cache + "/icon.iconset"
 		try? fm.removeItem(atPath: set)

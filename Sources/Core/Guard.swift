@@ -42,8 +42,13 @@ enum Guard {
 				}
 			}
 			if !path.isEmpty {
+				Review.snap(sid, path, nil)
 				return 0
 			}
+		}
+		if event == "PostToolUse", !path.isEmpty {
+			Review.snap(sid, path, Review.why(input["transcript_path"] as? String ?? "", input["tool_use_id"] as? String ?? "", path))
+			return 0
 		}
 		guard !sid.isEmpty else { return 0 }
 		_ = Space.run(["log", event, tool.isEmpty ? "session" : tool, sid, cwd])

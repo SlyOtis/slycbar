@@ -105,9 +105,11 @@ enum Tools {
 	static func version() -> String {
 		var text = ""
 		for skill in ((try? FileManager.default.contentsOfDirectory(atPath: Base.here + "/skills")) ?? []).sorted() {
-			text += Base.read(Base.here + "/skills/" + skill + "/SKILL.md")
+			for file in ((try? FileManager.default.subpathsOfDirectory(atPath: Base.here + "/skills/" + skill)) ?? []).sorted() {
+				text += Base.read(Base.here + "/skills/" + skill + "/" + file)
+			}
 		}
-		let sum = Base.run("/usr/bin/shasum", ["-a", "256"], input: text + "hooks: guard on SessionStart, PreToolUse, PostToolUse, ExitPlanMode; mcp: review_open, review_status, review_wait").out
+		let sum = Base.run("/usr/bin/shasum", ["-a", "256"], input: text + "hooks: guard on SessionStart, PreToolUse, PostToolUse of writes and runs, ExitPlanMode; mcp: review_open, review_status, review_wait").out
 		return "v1.0-" + sum.prefix(12)
 	}
 
@@ -118,8 +120,8 @@ enum Tools {
 		let fm = FileManager.default
 		for skill in (try? fm.contentsOfDirectory(atPath: Base.here + "/skills")) ?? [] {
 			try? fm.removeItem(atPath: dir + "/skills/" + skill)
-			try? fm.createDirectory(atPath: dir + "/skills/" + skill, withIntermediateDirectories: true)
-			Base.write(dir + "/skills/" + skill + "/SKILL.md", Base.read(Base.here + "/skills/" + skill + "/SKILL.md"))
+			try? fm.createDirectory(atPath: dir + "/skills", withIntermediateDirectories: true)
+			try? fm.copyItem(atPath: Base.here + "/skills/" + skill, toPath: dir + "/skills/" + skill)
 		}
 	}
 
@@ -128,7 +130,7 @@ enum Tools {
 			let hook: Json = ["type": "command", "command": Base.bin, "args": ["guard"], "timeout": 5]
 			return ["SessionStart": [["hooks": [hook]]],
 				"PreToolUse": [["matcher": "Edit|Write|MultiEdit|NotebookEdit", "hooks": [hook]], ["matcher": "Bash|mcp__.*|Agent|Task", "hooks": [hook]], ["matcher": "ExitPlanMode", "hooks": [hook]]],
-				"PostToolUse": [["matcher": "Bash|mcp__.*|Agent|Task", "hooks": [hook]]]]
+				"PostToolUse": [["matcher": "Edit|Write|MultiEdit|NotebookEdit", "hooks": [hook]], ["matcher": "Bash|mcp__.*|Agent|Task", "hooks": [hook]]]]
 		}
 		let gemini = host == "gemini"
 		let hook: Json = ["type": "command", "command": Base.bin + " guard", "timeout": gemini ? 5000 : 5]
@@ -136,7 +138,7 @@ enum Tools {
 		let run = gemini ? "run_shell_command|mcp_.*" : "Bash|mcp__.*|Agent"
 		return ["SessionStart": [["hooks": [hook]]],
 			(gemini ? "BeforeTool" : "PreToolUse"): [["matcher": write, "hooks": [hook]], ["matcher": run, "hooks": [hook]]],
-			(gemini ? "AfterTool" : "PostToolUse"): [["matcher": run, "hooks": [hook]]]]
+			(gemini ? "AfterTool" : "PostToolUse"): [["matcher": write, "hooks": [hook]], ["matcher": run, "hooks": [hook]]]]
 	}
 
 	static func found(_ host: String) -> Bool {
