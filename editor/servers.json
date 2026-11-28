@@ -11,9 +11,9 @@
       "cjs": "javascript",
       "jsx": "javascriptreact"
     },
-    "check": "test -x \"$S/typescript/node_modules/.bin/typescript-language-server\"",
-    "install": "mkdir -p \"$S/typescript\" && cd \"$S/typescript\" && { [ -f package.json ] || echo '{}' > package.json; } && pnpm add typescript typescript-language-server",
-    "run": "exec \"$S/typescript/node_modules/.bin/typescript-language-server\" --stdio"
+    "check": "command -v typescript-language-server > /dev/null",
+    "install": "brew install typescript-language-server",
+    "run": "exec typescript-language-server --stdio"
   },
   {
     "name": "json",
@@ -21,9 +21,9 @@
       "json": "json",
       "jsonc": "jsonc"
     },
-    "check": "test -x \"$S/web/node_modules/.bin/vscode-json-language-server\"",
-    "install": "mkdir -p \"$S/web\" && cd \"$S/web\" && { [ -f package.json ] || echo '{}' > package.json; } && pnpm add vscode-langservers-extracted",
-    "run": "exec \"$S/web/node_modules/.bin/vscode-json-language-server\" --stdio"
+    "check": "command -v vscode-json-language-server > /dev/null",
+    "install": "brew install vscode-langservers-extracted",
+    "run": "exec vscode-json-language-server --stdio"
   },
   {
     "name": "html",
@@ -31,9 +31,9 @@
       "html": "html",
       "htm": "html"
     },
-    "check": "test -x \"$S/web/node_modules/.bin/vscode-html-language-server\"",
-    "install": "mkdir -p \"$S/web\" && cd \"$S/web\" && { [ -f package.json ] || echo '{}' > package.json; } && pnpm add vscode-langservers-extracted",
-    "run": "exec \"$S/web/node_modules/.bin/vscode-html-language-server\" --stdio"
+    "check": "command -v vscode-html-language-server > /dev/null",
+    "install": "brew install vscode-langservers-extracted",
+    "run": "exec vscode-html-language-server --stdio"
   },
   {
     "name": "css",
@@ -42,9 +42,9 @@
       "scss": "scss",
       "less": "less"
     },
-    "check": "test -x \"$S/web/node_modules/.bin/vscode-css-language-server\"",
-    "install": "mkdir -p \"$S/web\" && cd \"$S/web\" && { [ -f package.json ] || echo '{}' > package.json; } && pnpm add vscode-langservers-extracted",
-    "run": "exec \"$S/web/node_modules/.bin/vscode-css-language-server\" --stdio"
+    "check": "command -v vscode-css-language-server > /dev/null",
+    "install": "brew install vscode-langservers-extracted",
+    "run": "exec vscode-css-language-server --stdio"
   },
   {
     "name": "yaml",
@@ -52,9 +52,9 @@
       "yaml": "yaml",
       "yml": "yaml"
     },
-    "check": "test -x \"$S/yaml/node_modules/.bin/yaml-language-server\"",
-    "install": "mkdir -p \"$S/yaml\" && cd \"$S/yaml\" && { [ -f package.json ] || echo '{}' > package.json; } && pnpm add yaml-language-server",
-    "run": "exec \"$S/yaml/node_modules/.bin/yaml-language-server\" --stdio"
+    "check": "command -v yaml-language-server > /dev/null",
+    "install": "brew install yaml-language-server",
+    "run": "exec yaml-language-server --stdio"
   },
   {
     "name": "bash",
@@ -63,9 +63,9 @@
       "bash": "shellscript",
       "zsh": "shellscript"
     },
-    "check": "test -x \"$S/bash/node_modules/.bin/bash-language-server\"",
-    "install": "mkdir -p \"$S/bash\" && cd \"$S/bash\" && { [ -f package.json ] || echo '{}' > package.json; } && pnpm add bash-language-server",
-    "run": "exec \"$S/bash/node_modules/.bin/bash-language-server\" start"
+    "check": "command -v bash-language-server > /dev/null",
+    "install": "brew install bash-language-server",
+    "run": "exec bash-language-server start"
   },
   {
     "name": "svelte",
@@ -81,9 +81,9 @@
     "languages": {
       "dockerfile": "dockerfile"
     },
-    "check": "test -x \"$S/docker/node_modules/.bin/docker-langserver\"",
-    "install": "mkdir -p \"$S/docker\" && cd \"$S/docker\" && { [ -f package.json ] || echo '{}' > package.json; } && pnpm add dockerfile-language-server-nodejs",
-    "run": "exec \"$S/docker/node_modules/.bin/docker-langserver\" --stdio"
+    "check": "command -v docker-langserver > /dev/null",
+    "install": "brew install dockerfile-language-server",
+    "run": "exec docker-langserver --stdio"
   },
   {
     "name": "pyright",
@@ -91,9 +91,9 @@
       "py": "python",
       "pyi": "python"
     },
-    "check": "test -x \"$S/pyright/node_modules/.bin/pyright-langserver\"",
-    "install": "mkdir -p \"$S/pyright\" && cd \"$S/pyright\" && { [ -f package.json ] || echo '{}' > package.json; } && pnpm add pyright",
-    "run": "exec \"$S/pyright/node_modules/.bin/pyright-langserver\" --stdio"
+    "check": "command -v pyright-langserver > /dev/null",
+    "install": "brew install pyright",
+    "run": "exec pyright-langserver --stdio"
   },
   {
     "name": "gopls",
@@ -101,9 +101,9 @@
       "go": "go",
       "mod": "go.mod"
     },
-    "check": "test -x \"$S/go/gopls\"",
-    "install": "mkdir -p \"$S/go\" && GOBIN=\"$S/go\" go install golang.org/x/tools/gopls@latest",
-    "run": "exec \"$S/go/gopls\""
+    "check": "command -v gopls > /dev/null",
+    "install": "brew install gopls",
+    "run": "exec gopls"
   },
   {
     "name": "rust-analyzer",
@@ -263,5 +263,16 @@
     "check": "command -v vue-language-server > /dev/null",
     "install": "brew install vue-language-server",
     "run": "exec vue-language-server --stdio"
+  },
+  {
+    "name": "just",
+    "languages": {
+      "justfile": "just",
+      ".justfile": "just",
+      "just": "just"
+    },
+    "check": "command -v just-lsp > /dev/null",
+    "install": "brew install just-lsp",
+    "run": "exec just-lsp"
   }
 ]

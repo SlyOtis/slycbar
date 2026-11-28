@@ -175,8 +175,9 @@ enum Review {
 			["change": at + 1, "title": change["title"] ?? "", "path": change["path"] ?? "", "proposed": change["proposed"] ?? "", "status": change["status"] ?? "pending", "comments": change["comments"] ?? []]
 		}
 		let decided = rows.filter { ($0["status"] as? String ?? "pending") != "pending" }.count
+		let hunks = (path as NSString).deletingLastPathComponent + "/hunks.jsonl"
 		return ["plan": path, "title": plan["title"] ?? "", "state": plan["state"] ?? "open", "round": plan["round"] ?? 1, "session": plan["session"] ?? "", "decided": decided, "pending": rows.count - decided,
-			"comments": plan["comments"] ?? [], "run": plan["run"] ?? NSNull(), "changes": rows]
+			"comments": plan["comments"] ?? [], "run": plan["run"] ?? NSNull(), "changes": rows, "focus": plan["focus"] ?? [], "groups": plan["groups"] ?? [], "view": plan["view"] ?? "sides", "hunks": FileManager.default.fileExists(atPath: hunks) ? hunks : NSNull()]
 	}
 
 	static func wait(_ path: String, _ seconds: Int) -> Json {
@@ -354,7 +355,7 @@ enum Review {
 		return "slycbar: the review of \(plan["title"] as? String ?? "the plan") at \(path) is \(state), round \(plan["round"] as? Int ?? 1): \(accepted) accepted, \(rejected) rejected, \(marks.count - accepted - rejected) pending. Wait for it with review_wait or slybar review \(path) wait, read the feedback with review_status, revise with review_open and this plan path, and call ExitPlanMode once every change is accepted."
 	}
 
-	static let guide = "slycbar puts a plan of real file changes before the user in Slyed, the slycbar editor. In plan mode, present the intended changes as their full proposed file contents with review_open, never as prose alone: one change per file, in the order the work is done, with title, why, the absolute target path and the contents. Slyed numbers the changes 1, 2, 3 and splits each into its diff hunks, numbered 2.1, 2.2 within change 2; write the why of a change as a numbered list with one line per hunk in file order, and use these numbers whenever you refer to a change. Slyed shows every hunk of every file in one diff, and the user accepts or rejects each hunk, with or without a comment. Call review_wait right after review_open, in the same turn, and call it again when it returns with waited set: nothing comes back until the user has decided every hunk. The result holds, in each change's comments, one entry per hunk in file order with side, line, end, status accepted or rejected, and text when the user commented. When the state is sent, revise the plan as a whole on those entries and call review_open again with the same plan path and every change; a change whose contents did not change keeps its verdicts. When the state is approved, every hunk is accepted: apply exactly that and do not open the review again. Call ExitPlanMode only then; a hook refuses it before."
+	static let guide = "slycbar puts a plan of real file changes before the user in Slyed, the slycbar editor. In plan mode, present the intended changes as their full proposed file contents with review_open, never as prose alone: one change per file, in the order the work is done, with title, why, the absolute target path and the contents. Slyed numbers the changes 1, 2, 3 and splits each into its diff hunks, numbered 2.1, 2.2 within change 2; write the why of a change as a numbered list with one line per hunk in file order, and use these numbers whenever you refer to a change. Slyed shows every hunk of every file in one diff, and the user accepts or rejects each hunk, with or without a comment. Call review_wait right after review_open, in the same turn, and call it again when it returns with waited set: nothing comes back until the user has decided every hunk. The result holds, in each change's comments, one entry per hunk in file order with side, line, end, status accepted or rejected, and text when the user commented. When the state is sent, revise the plan as a whole on those entries and call review_open again with the same plan path and every change; a change whose contents did not change keeps its verdicts. When the user asks to see only some of the changes, read the hunks file named by review_status, work out which hunks they mean from the two files at those lines, and call review_open with the plan path and focus; Slyed then shows those open, the rest collapsed, and the review is done when the hunks in focus are decided. When the user asks to compare two files, two versions of an api or two applications, put the comparison up the same way: one change per pair of files with base the left file, proposed the right file, path the right file and no contents, after bringing both sides to the same shape first where that removes noise, such as sorted keys and one formatting for json, and for two folders one change per file that differs. Then read the hunks file, sort the hunks into groups by what they mean, such as breaking changes, additions, documentation only and noise, with a title for each, collapse the groups the user did not ask about, and send them with review_open, the plan path and groups. The user can select lines in the diff and ask a question about them; it arrives as a message and, in a review, as a comment on that change with question true, side, line and end. Answer it by setting answer on that comment and calling review_open with the plan path and that change as only its path and its comments; Slyed shows the question and the answer under those lines. A comment of your own with side, line, end and text is shown the same way, as a note under the lines it is about. When the user asks for single view or side by side, call review_open with the plan path and view single or sides. When the state is approved, every hunk in focus is accepted: apply exactly that and do not open the review again. Call ExitPlanMode only then; a hook refuses it before."
 
 	static let tools: [Json] = [
 		["name": "review_open", "description": "Put a plan of proposed file changes up for review in Slyed, or revise one. Each change carries the full proposed file contents; slycbar writes them beside the plan file and never touches the target. With plan and no changes it opens that plan again. Returns the plan path and its status.",
@@ -365,9 +366,13 @@ enum Review {
 					"title": ["type": "string"], "why": ["type": "string", "description": "A numbered list, one line per hunk of this file in file order."], "path": ["type": "string", "description": "Absolute path of the target file."],
 					"contents": ["type": "string", "description": "The full proposed contents of the file."], "proposed": ["type": "string", "description": "Absolute path of a file that already holds the proposed contents, instead of contents."],
 					"base": ["type": "string", "description": "Absolute path of the left side when it is not the target's current contents."],
+					"diff": ["type": "array", "items": ["type": "string"], "description": "How git aligns this change: one of histogram (the default), patience, minimal, myers, and any of ignore-all-space, ignore-space-change, ignore-space-at-eol, ignore-blank-lines, ignore-cr-at-eol."],
 					"comments": ["type": "array", "description": "The change's comments with an answer field filled for each question; omit to keep them."]] as Json, "required": ["path"]] as Json],
-				"comments": ["type": "array", "description": "Plan wide comments with answers; omit to keep them."]] as Json] as Json],
-		["name": "review_status", "description": "Read a review: state (open, sent, revising, approved), round, every change with its status and comments, and the plan wide comments. Questions carry question true.",
+				"comments": ["type": "array", "description": "Plan wide comments with answers; omit to keep them."],
+				"focus": ["type": "array", "items": ["type": "string"], "description": "Hunk numbers such as 1.4 and 2.1, read from the hunks file. Slyed shows these open and asks a verdict on these only; every other hunk is listed collapsed. An empty list puts every hunk in focus. Pass it with plan and no changes to refocus an open review."],
+				"groups": ["type": "array", "description": "Named groups of hunks, shown in this order in place of the file order, each under its title. A collapsed group lists its hunks closed and asks no verdict on them. Hunks in no group follow under Everything else, collapsed. Pass it with plan and no changes to regroup an open review.", "items": ["type": "object", "properties": ["title": ["type": "string"], "hunks": ["type": "array", "items": ["type": "string"]], "collapsed": ["type": "boolean"]] as Json, "required": ["title", "hunks"]] as Json],
+				"view": ["type": "string", "enum": ["single", "sides"], "description": "sides, the default, shows the current lines left and the proposed right; single shows each hunk as one column. Pass it with plan and no changes to switch an open review."]] as Json] as Json],
+		["name": "review_status", "description": "Read a review: state (open, sent, revising, approved), round, every change with its status and comments, the plan wide comments, the focus, the view, and hunks, the path of a jsonl file Slyed writes within seconds of opening with one line per hunk: hunk, change, path, side, line, end, added, removed. Questions carry question true.",
 			"inputSchema": ["type": "object", "properties": ["plan": ["type": "string", "description": "Absolute path of the plan file."]] as Json, "required": ["plan"]] as Json,
 			"annotations": ["readOnlyHint": true]],
 		["name": "review_wait", "description": "Wait until the user has decided every hunk in Slyed, state sent or approved, then return the review: each change with its status and one comment entry per hunk carrying side, line, end, status and text. Returns after seconds with waited set when the user is not done; call it again.",
@@ -381,8 +386,12 @@ enum Review {
 		case "review_open":
 			var given: Json?
 			if let changes = args["changes"] as? [Json], !changes.isEmpty {
-				var built: Json = ["changes": changes]
-				for key in ["title", "comments"] where args[key] != nil {
+				let prior = plan.isEmpty ? [] : Base.json(absolute(plan))["changes"] as? [Json] ?? []
+				var built: Json = ["changes": changes.map { change -> Json in
+					guard change["contents"] == nil, change["proposed"] == nil, let old = prior.first(where: { $0["path"] as? String == change["path"] as? String }) else { return change }
+					return old.merging(change) { _, mine in mine }
+				}]
+				for key in ["title", "comments", "focus", "groups", "view"] where args[key] != nil {
 					built[key] = args[key]
 				}
 				if !plan.isEmpty {
@@ -390,11 +399,20 @@ enum Review {
 					old["changes"] = nil
 					old["comments"] = nil
 					old["round"] = nil
+					old["focus"] = nil
+					old["groups"] = nil
 					built.merge(old) { mine, _ in mine }
 				}
 				given = built
 			} else if plan.isEmpty {
 				return ("review_open needs changes, or the plan path of an existing plan", true)
+			} else if args["focus"] != nil || args["groups"] != nil || args["view"] != nil {
+				var old = Base.json(absolute(plan))
+				guard !old.isEmpty else { return ("no plan at \(plan)", true) }
+				for key in ["focus", "groups", "view"] where args[key] != nil {
+					old[key] = args[key]
+				}
+				Base.write(absolute(plan), Base.text(old, pretty: true))
 			}
 			let (found, failed) = open(given, plan)
 			if let failed { return (failed, true) }

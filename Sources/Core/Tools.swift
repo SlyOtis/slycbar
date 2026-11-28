@@ -26,7 +26,7 @@ enum Tools {
 	}
 
 	static let defaults: Json = ["font": "Liga Roboto Mono", "ligatures": true, "smoothing": true, "traces": true, "accent": "#b4632f", "read": "#56a8f5", "edited": "#ef8221", "wrote": "#6aab73",
-		"agents": true, "meters": true, "stats": true, "warp": true, "width": 214.0, "scale": 1.1, "zoom": 1.2]
+		"agents": true, "meters": true, "stats": true, "warp": true, "width": 214.0, "scale": 1.1, "zoom": 1.2, "accept": "cmd+return", "reject": "opt+return", "ask": "ctrl+return"]
 
 	static func settings(_ args: [String]) -> Int32 {
 		var stored = Base.json(Base.settings)
@@ -86,7 +86,8 @@ enum Tools {
 		guard let path = args.first else { return Base.fail("usage: slybar server <path> [install]", 2) }
 		let name = (path as NSString).lastPathComponent.lowercased()
 		let ext = name.contains(".") ? (name as NSString).pathExtension : name
-		let all = (try? JSONSerialization.jsonObject(with: Data(Base.read(Base.here + "/editor/servers.json").utf8))) as? [Json] ?? []
+		let own = (try? JSONSerialization.jsonObject(with: Data(Base.read(NSHomeDirectory() + "/.slycbar/servers.json").utf8))) as? [Json] ?? []
+		let all = own + ((try? JSONSerialization.jsonObject(with: Data(Base.read(Base.here + "/editor/servers.json").utf8))) as? [Json] ?? []).filter { entry in !own.contains { $0["name"] as? String == entry["name"] as? String } }
 		guard let entry = all.first(where: { ($0["languages"] as? Json)?[ext] != nil || ($0["languages"] as? Json)?[name] != nil }) else {
 			guard Base.run("brew", ["--version"]).code == 0 else { return Base.fail("brew is missing") }
 			let found = Base.run("brew", ["search", "/(^|-)\(ext)(-|_)?(language-server|lsp|ls)$/"]).out.split(separator: "\n").map(String.init).filter { !$0.isEmpty && !$0.hasPrefix("==>") }

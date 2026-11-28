@@ -35,7 +35,7 @@ enum Install {
 		let carried = given.keys.sorted().map { "<key>" + $0 + "</key><string>" + (given[$0] ?? "") + "</string>" }.joined()
 		let schemes = { (names: [String]) in "<array>" + names.map { "<dict><key>CFBundleURLName</key><string>\($0)</string><key>CFBundleURLSchemes</key><array><string>\($0)</string></array></dict>" }.joined() + "</array>" }
 		guard Base.run("/usr/bin/swift", ["build", "-c", "release"], dir: Base.here, quiet: false).code == 0 else { return Base.fail("the build failed") }
-		guard Base.run("pnpm", ["--version"]).code == 0 else { return Base.fail("pnpm is missing, the editor page needs it") }
+		guard Base.run("pnpm", ["--version"]).code == 0 else { return Base.fail("pnpm is missing, warp needs three from it") }
 
 		try? fm.removeItem(atPath: Base.editApp)
 		let ext = Base.editApp + "/Contents/PlugIns/widget.appex"
@@ -53,15 +53,16 @@ enum Install {
 
 		let build = Base.cache + "/editor/build"
 		try? fm.createDirectory(atPath: build, withIntermediateDirectories: true)
-		for name in ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "vite.config.js", "index.html", "main.js", "icon.svg"] {
+		for name in ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"] {
 			Base.write(build + "/" + name, Base.read(Base.here + "/editor/" + name))
 		}
-		try? fm.removeItem(atPath: build + "/components-nimtech")
-		try? fm.copyItem(atPath: Base.here + "/editor/components-nimtech", toPath: build + "/components-nimtech")
-		try? fm.removeItem(atPath: build + "/fonts")
-		try? fm.copyItem(atPath: Base.here + "/editor/fonts", toPath: build + "/fonts")
-		guard Base.run("pnpm", ["install", "--frozen-lockfile"], dir: build).code == 0, Base.run("pnpm", ["build"], dir: build).code == 0 else { return Base.fail("the editor page did not build") }
-		try? fm.copyItem(atPath: build + "/dist", toPath: Base.editApp + "/Contents/Resources/editor")
+		guard Base.run("pnpm", ["install", "--frozen-lockfile"], dir: build).code == 0 else { return Base.fail("three did not install") }
+		try? fm.createDirectory(atPath: Base.editApp + "/Contents/Resources/editor", withIntermediateDirectories: true)
+		try? fm.copyItem(atPath: Base.here + "/editor/fonts", toPath: Base.editApp + "/Contents/Resources/editor/fonts")
+		try? fm.createDirectory(atPath: Base.editApp + "/Contents/Resources/editor/queries", withIntermediateDirectories: true)
+		for name in ["bash", "css", "go", "html", "javascript", "json", "python", "rust", "swift", "typescript"] {
+			try? fm.copyItem(atPath: Base.here + "/.build/checkouts/tree-sitter-" + name + "/queries/highlights.scm", toPath: Base.editApp + "/Contents/Resources/editor/queries/" + name + ".scm")
+		}
 		try? fm.copyItem(atPath: build + "/node_modules/three/build/three.min.js", toPath: Base.editApp + "/Contents/Resources/three.min.js")
 		try? fm.copyItem(atPath: Base.here + "/editor/servers.json", toPath: Base.editApp + "/Contents/Resources/editor/servers.json")
 		let set = Base.cache + "/icon.iconset"
