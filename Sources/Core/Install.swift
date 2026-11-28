@@ -47,7 +47,7 @@ enum Install {
 			("NSHighResolutionCapable", "<true/>"), ("CFBundleIconFile", "icon"), ("CFBundleDocumentTypes", types)]))
 
 		try? fm.createDirectory(atPath: Base.editApp + "/Contents/Resources", withIntermediateDirectories: true)
-		for name in ["warp.html", "impact.html", "hands.js", "celery.html", "celery.m4a", "editor/icon.png", "editor/tray.svg"] {
+		for name in ["warp.html", "impact.html", "forest.mp4", "hands.js", "celery.html", "celery.m4a", "editor/icon.png", "editor/tray.svg"] {
 			try? fm.copyItem(atPath: Base.here + "/" + name, toPath: Base.editApp + "/Contents/Resources/" + (name as NSString).lastPathComponent)
 		}
 
